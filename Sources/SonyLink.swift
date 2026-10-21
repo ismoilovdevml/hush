@@ -116,7 +116,7 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
         body.append(UInt8(body.reduce(0) { $0 + Int($1) } & 0xff))
         var out: [UInt8] = [Sony.start]
         for b in body {
-            if b == Sony.start || b == Sony.end || b == Sony.esc { out += [Sony.esc, b & ~0x20] } else { out.append(b) }
+            if b == Sony.start || b == Sony.end || b == Sony.esc { out += [Sony.esc, b & ~0x10] } else { out.append(b) }
         }
         out.append(Sony.end)
         return out
@@ -147,14 +147,17 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
             var body: [UInt8] = [], i = s + 1, closed = false
             while i < rx.count {
                 if rx[i] == Sony.end { closed = true; break }
-                if rx[i] == Sony.esc { i += 1; if i < rx.count { body.append(rx[i] | 0x20) } } else { body.append(rx[i]) }
+                if rx[i] == Sony.esc { i += 1; if i < rx.count { body.append(rx[i] | 0x10) } } else { body.append(rx[i]) }
                 i += 1
             }
             if !closed { if s > 0 { rx.removeSubrange(0..<s) }; return }
             rx.removeSubrange(0...i)
             guard body.count >= 7 else { continue }
+            let checksum = UInt8(body[0..<(body.count - 1)].reduce(0) { $0 + Int($1) } & 0xff)
+            guard checksum == body[body.count - 1] else { continue }
             let len = Int(body[2]) << 24 | Int(body[3]) << 16 | Int(body[4]) << 8 | Int(body[5])
-            let payload = Array(body[6..<min(6 + len, body.count - 1)])
+            guard len == body.count - 7 else { continue }
+            let payload = Array(body[6..<(6 + len)])
             let frame = SonyFrame(dataType: body[0], seq: body[1], payload: payload)
 
             if frame.dataType == Sony.ack {

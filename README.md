@@ -57,7 +57,12 @@ audio — no extra permission is needed.
 
 `checksum` is the sum of every byte from `dataType` through the payload, masked to 8 bits.
 Inside the frame, the bytes `0x3E`, `0x3C` and `0x3D` are escaped as `0x3D` followed by
-the byte with bit 5 cleared.
+`b & 0xEF` — bit 4 cleared, not bit 5 — and the reader restores them with `b | 0x10`.
+
+Getting that mask wrong is easy and stays invisible for a long time, because most payloads
+never contain those three bytes. It first showed up here in the equalizer band table, where
+16000 Hz is `0x3E80`: the frame decoded one byte short of correct and its checksum failed.
+Frames that fail the checksum are dropped rather than passed on.
 
 Two rules are easy to miss and break everything if you get them wrong:
 
