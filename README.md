@@ -12,6 +12,8 @@ Bluetooth RFCOMM using Sony's own MDR protocol.
 
 - **Noise cancelling** — Off / Noise Cancelling / Ambient Sound, ambient level 0–20, Focus on Voice
 - **Battery**, active **codec**, **firmware version**
+- **Equalizer** — 10 bands from 31 Hz to 16 kHz at ±6 dB, plus the presets the headphones
+  themselves report (Off, Heavy, Clear, Hard, Soft, Gaming, Manual, User 1, User 2)
 - **DSEE Extreme** toggle
 - **Now Playing** — artwork, title, artist, and transport that works with any player, browsers included
 - **Volume**, kept in step with the system volume
@@ -89,6 +91,28 @@ NOTIFY  0x69 0x19 ...                       (echoes the new state)
 `on=0` is Off, `on=1, ambient=0` is Noise Cancelling, `on=1, ambient=1` is Ambient Sound.
 This is probably why Gadgetbridge still marks the XM6 as experimental.
 
+### Equalizer
+
+Nothing here is guessed: the headphones describe their own equalizer. `0x50 0x00 0x01`
+returns `51 04 0a 0d 09 …` — **ten** bands, **thirteen** level steps, nine presets — and
+`0x5A 0x00` returns the band centre frequencies as 16-bit values: 31, 63, 125, 250, 500,
+1k, 2k, 4k, 8k, 16k Hz.
+
+Thirteen steps means the centre is `(13 - 1) / 2 = 6`, so a band travels the wire as
+`dB + 6` and the usable range is −6…+6. That is why a flat equalizer reads back as ten
+bytes of `0x06`.
+
+```
+GET     0x56 0x00
+RET     0x57 0x00 <preset> 0x0A <10 bands>
+SET     0x58 0x00 <preset> 0x00                  (switch to a preset)
+SET     0x58 0x00 0xA0 0x0A <10 bands>           (manual curve)
+NOTIFY  0x59 ...                                 (echoes the new state)
+```
+
+Gadgetbridge's decoder expects clear bass plus five bands and a payload of exactly ten
+bytes, so it does not fit this device.
+
 ### Now Playing
 
 Since macOS 15.4, MediaRemote returns nothing to an unentitled process —
@@ -107,17 +131,14 @@ The headphones are not a toy, and a wrong opcode on protocol v2 is not harmless:
 therefore refuses to transmit anything outside an explicit allow list, before it reaches
 the air:
 
-| Allowed | `00` `04` `12` `22` `56`(read) `66` `68` `A6`(read) `E6` `E8` `F6`(read) |
+| Allowed | `00` `04` `12` `22` `50` `56` `58` `5A` `66` `68` `A6` `E6` `E8` `F6` |
 |---|---|
-| **Never sent** | **`F8`** factory reset · **`98`** reboot · **`24`** power off · **`2D`** firmware transfer · **`C4`** JSON dump · **`58`** EQ write |
+| **Never sent** | **`F8`** factory reset · **`98`** reboot · **`24`** power off · **`2D`** firmware transfer · **`C4`** JSON dump |
 
 Firmware update is not implemented and will not be. Use Sound Connect on a phone for that.
 
 ## Known limits
 
-- **Equalizer is read-only.** The XM6 answers `0x56 0x00` with **ten** bands, while
-  Gadgetbridge's decoder expects clear bass plus five. The band encoding has not been
-  worked out, so Hush does not write EQ.
 - **Speak-to-chat is read-only** — it reads fine on `0xF6 0x05`, but writing it goes
   through `0xF8`, which is factory reset on this protocol version.
 - **No LDAC.** macOS negotiates AAC with this headset, and its Bluetooth stack will not use

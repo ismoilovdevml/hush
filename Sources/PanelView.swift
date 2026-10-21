@@ -61,6 +61,49 @@ private struct TransportButton: View {
     }
 }
 
+/// One equalizer band: a vertical track with the knob travelling either side of flat.
+private struct EQBand: View {
+    let label: String
+    let value: Int
+    let onChange: (Int) -> Void
+    let onCommit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                let w = geo.size.width, h = geo.size.height
+                let mid = h / 2
+                let knobY = mid - CGFloat(value) / 6 * (mid - 5)
+                ZStack {
+                    Capsule().fill(.quaternary)
+                        .frame(width: 3, height: h)
+                        .position(x: w / 2, y: mid)
+                    Capsule().fill(Color.accentColor)
+                        .frame(width: 3, height: abs(knobY - mid))
+                        .position(x: w / 2, y: (knobY + mid) / 2)
+                    Circle().fill(.white)
+                        .frame(width: 9, height: 9)
+                        .shadow(color: .black.opacity(0.35), radius: 1, y: 0.5)
+                        .position(x: w / 2, y: knobY)
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { g in
+                            let frac = max(-1, min(1, (mid - g.location.y) / (mid - 5)))
+                            onChange(Int((frac * 6).rounded()))
+                        }
+                        .onEnded { _ in onCommit() }
+                )
+            }
+            .frame(height: 58)
+            Text(label)
+                .font(.system(size: 8))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct PanelView: View {
     @ObservedObject var hp: Headphones
     @ObservedObject var np: NowPlaying
@@ -132,6 +175,37 @@ struct PanelView: View {
             }
 
             Card {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Equalizer").font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Menu {
+                            ForEach(Headphones.eqPresets, id: \.code) { preset in
+                                Button(preset.name) { hp.setEQPreset(preset.code) }
+                            }
+                        } label: {
+                            Text(Headphones.eqPresets.first { $0.code == hp.eqPreset }?.name
+                                 ?? String(format: "0x%02x", hp.eqPreset))
+                                .font(.system(size: 11))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                    if hp.eqIsManual {
+                        HStack(alignment: .bottom, spacing: 1) {
+                            ForEach(Array(hp.eqBands.enumerated()), id: \.offset) { idx, value in
+                                EQBand(label: Headphones.eqFrequencies[min(idx, 9)],
+                                       value: value,
+                                       onChange: { hp.eqBands[idx] = $0 },
+                                       onCommit: { hp.pushEQBands() })
+                            }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+            }
+
+            Card {
                 Toggle(isOn: Binding(get: { hp.dsee }, set: { hp.setDSEE($0) })) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("DSEE Extreme").font(.system(size: 12, weight: .medium))
@@ -147,6 +221,7 @@ struct PanelView: View {
         .padding(12)
         .frame(width: 320)
         .animation(.easeInOut(duration: 0.18), value: hp.anc)
+        .animation(.easeInOut(duration: 0.18), value: hp.eqIsManual)
         .onAppear { hp.refresh() }
     }
 

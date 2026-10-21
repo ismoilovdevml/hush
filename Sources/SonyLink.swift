@@ -10,9 +10,10 @@ enum Sony {
     /// Opcodes this app is allowed to emit. Anything else is refused before it reaches the air.
     /// Deliberately excluded, because on protocol v2 they are destructive or unverified:
     ///   0xF8 FACTORY_RESET_SET · 0x98 SYSTEM_CONTROL_SET (reboot) · 0x24 POWER_SET
-    ///   0x2D LARGE_DATA_COMMON (firmware) · 0xC4 JSON_GET · 0x58 EQUALIZER_SET (encoding unverified)
-    static let allowed: Set<UInt8> = [0x00, 0x04, 0x12, 0x22, 0x56, 0x66, 0x68, 0xE6, 0xE8, 0xF6]
-    static let forbidden: Set<UInt8> = [0xF8, 0x98, 0x24, 0x2D, 0xC4, 0x58]
+    ///   0x2D LARGE_DATA_COMMON (firmware) · 0xC4 JSON_GET
+    static let allowed: Set<UInt8> = [0x00, 0x04, 0x12, 0x22, 0x50, 0x56, 0x58, 0x5A,
+                                      0x66, 0x68, 0xA6, 0xE6, 0xE8, 0xF6]
+    static let forbidden: Set<UInt8> = [0xF8, 0x98, 0x24, 0x2D, 0xC4]
 }
 
 struct SonyFrame {

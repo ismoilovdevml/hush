@@ -44,6 +44,19 @@ final class Headphones: ObservableObject {
     @Published var volume: Double = 50
     @Published var playing = false
     @Published var mediaKeysAllowed = true
+    @Published var eqPreset: UInt8 = 0x00
+    @Published var eqBands: [Int] = Array(repeating: 0, count: 10)
+
+    /// Band centre frequencies, read from the device (0x5A) — 10 octave bands on the XM6.
+    static let eqFrequencies = ["31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
+    /// Presets the XM6 reports in its capability reply (0x51).
+    static let eqPresets: [(code: UInt8, name: String)] = [
+        (0x00, "Off"), (0x30, "Heavy"), (0x31, "Clear"), (0x32, "Hard"),
+        (0x33, "Soft"), (0x20, "Gaming"), (0xA0, "Manual"), (0xA1, "User 1"), (0xA2, "User 2"),
+    ]
+    /// levelSteps is 13, so values travel the wire as dB + 6.
+    private static let eqCenter = 6
+    var eqIsManual: Bool { eqPreset >= 0xA0 }
     @Published var busy = false
 
     private let link: SonyLink
@@ -114,6 +127,14 @@ final class Headphones: ObservableObject {
             guard let f else { return }
             Task { @MainActor in self?.apply(f) }
         }
+        link.request(Sony.cmd1, [0x56, 0x00], expect: 0x57) { [weak self] f in
+            guard let f, f.payload.count >= 4 else { return }
+            let n = Int(f.payload[3])
+            guard f.payload.count >= 4 + n else { return }
+            let preset = f.payload[2]
+            let bands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
+            Task { @MainActor in self?.eqPreset = preset; self?.eqBands = Array(bands) }
+        }
         link.request(Sony.cmd1, [0xE6, 0x01], expect: 0xE7) { [weak self] f in
             guard let f, f.payload.count >= 3 else { return }
             Task { @MainActor in self?.dsee = f.payload[2] == 1 }
@@ -148,6 +169,29 @@ final class Headphones: ObservableObject {
                 if let f { self?.apply(f) }
             }
         }
+    }
+
+    func setEQPreset(_ preset: UInt8) {
+        eqPreset = preset
+        link.request(Sony.cmd1, [0x58, 0x00, preset, 0x00], expect: 0x59) { [weak self] f in
+            guard let f else { return }
+            Task { @MainActor in self?.applyEQ(f) }
+        }
+    }
+
+    func pushEQBands() {
+        eqPreset = 0xA0
+        let payload: [UInt8] = [0x58, 0x00, 0xA0, UInt8(eqBands.count)]
+            + eqBands.map { UInt8(min(max($0, -6), 6) + Headphones.eqCenter) }
+        link.request(Sony.cmd1, payload, expect: 0x59) { _ in }
+    }
+
+    private func applyEQ(_ f: SonyFrame) {
+        guard f.payload.count >= 4 else { return }
+        let n = Int(f.payload[3])
+        guard f.payload.count >= 4 + n else { return }
+        eqPreset = f.payload[2]
+        eqBands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
     }
 
     func setDSEE(_ on: Bool) {
