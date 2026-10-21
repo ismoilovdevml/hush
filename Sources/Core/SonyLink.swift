@@ -5,6 +5,8 @@ import IOBluetooth
 
 enum Sony {
     static let start: UInt8 = 0x3E, end: UInt8 = 0x3C, esc: UInt8 = 0x3D
+    /// Escaping clears this bit; the reader sets it again. Gadgetbridge: mask 0b11101111.
+    static let escapeBit: UInt8 = 0x10
     static let ack: UInt8 = 0x01, cmd1: UInt8 = 0x0C, cmd2: UInt8 = 0x0E
 
     /// Opcodes this app is allowed to emit. Anything else is refused before it reaches the air.
@@ -99,7 +101,7 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
         let job = queue.removeFirst()
         inFlight = job
         deadline = Date().addingTimeInterval(job.timeout)
-        write(encode(job.dataType, txSeq, job.payload))
+        write(SonyFrameCodec.encode(dataType: job.dataType, seq: txSeq, payload: job.payload))
     }
 
     private func finish(_ frame: SonyFrame?) {
@@ -108,19 +110,6 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
         deadline = nil
         job.done(frame)
         pump()
-    }
-
-    private func encode(_ dt: UInt8, _ seq: UInt8, _ payload: [UInt8]) -> [UInt8] {
-        let n = UInt32(payload.count)
-        var body: [UInt8] = [dt, seq, UInt8(n >> 24 & 0xff), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff)]
-        body += payload
-        body.append(UInt8(body.reduce(0) { $0 + Int($1) } & 0xff))
-        var out: [UInt8] = [Sony.start]
-        for b in body {
-            if b == Sony.start || b == Sony.end || b == Sony.esc { out += [Sony.esc, b & ~0x10] } else { out.append(b) }
-        }
-        out.append(Sony.end)
-        return out
     }
 
     private func write(_ bytes: [UInt8]) {
@@ -144,28 +133,13 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
     }
 
     private func drain() {
-        while let s = rx.firstIndex(of: Sony.start) {
-            var body: [UInt8] = [], i = s + 1, closed = false
-            while i < rx.count {
-                if rx[i] == Sony.end { closed = true; break }
-                if rx[i] == Sony.esc { i += 1; if i < rx.count { body.append(rx[i] | 0x10) } } else { body.append(rx[i]) }
-                i += 1
-            }
-            if !closed { if s > 0 { rx.removeSubrange(0..<s) }; return }
-            rx.removeSubrange(0...i)
-            guard body.count >= 7 else { continue }
-            let checksum = UInt8(body[0..<(body.count - 1)].reduce(0) { $0 + Int($1) } & 0xff)
-            guard checksum == body[body.count - 1] else { continue }
-            let len = Int(body[2]) << 24 | Int(body[3]) << 16 | Int(body[4]) << 8 | Int(body[5])
-            guard len == body.count - 7 else { continue }
-            let payload = Array(body[6..<(6 + len)])
-            let frame = SonyFrame(dataType: body[0], seq: body[1], payload: payload)
-
+        for frame in SonyFrameCodec.decode(from: &rx) {
             if frame.dataType == Sony.ack {
-                txSeq = frame.seq                       // our next request rides the flipped sequence
+                txSeq = frame.seq                 // our next request rides the flipped sequence
                 continue
             }
-            write(encode(Sony.ack, 1 &- frame.seq, []))  // unacked frames get retransmitted ~5x
+            // unacked frames get retransmitted ~5x
+            write(SonyFrameCodec.encode(dataType: Sony.ack, seq: 1 &- frame.seq, payload: []))
             if let job = inFlight, job.expect == frame.opcode {
                 finish(frame)
             } else {

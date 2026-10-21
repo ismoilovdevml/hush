@@ -180,11 +180,11 @@ struct PanelView: View {
                         Text("Equalizer").font(.system(size: 12, weight: .medium))
                         Spacer()
                         Menu {
-                            ForEach(Headphones.eqPresets, id: \.code) { preset in
+                            ForEach(hp.eqPresets, id: \.code) { preset in
                                 Button(preset.name) { hp.setEQPreset(preset.code) }
                             }
                         } label: {
-                            Text(Headphones.eqPresets.first { $0.code == hp.eqPreset }?.name
+                            Text(hp.eqPresets.first { $0.code == hp.eqPreset }?.name
                                  ?? String(format: "0x%02x", hp.eqPreset))
                                 .font(.system(size: 11))
                         }
@@ -194,7 +194,7 @@ struct PanelView: View {
                     if hp.eqIsManual {
                         HStack(alignment: .bottom, spacing: 1) {
                             ForEach(Array(hp.eqBands.enumerated()), id: \.offset) { idx, value in
-                                EQBand(label: Headphones.eqFrequencies[min(idx, 9)],
+                                EQBand(label: hp.eqFrequencies[min(idx, 9)],
                                        value: value,
                                        onChange: { hp.eqBands[idx] = $0 },
                                        onCommit: { hp.pushEQBands() })

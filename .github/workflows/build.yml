@@ -21,6 +21,9 @@ jobs:
           swift --version
           clang --version | head -1
 
+      - name: Test
+        run: ./test.sh
+
       - name: Build
         run: ./build.sh
 

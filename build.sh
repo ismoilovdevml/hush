@@ -68,12 +68,15 @@ echo "built: $(pwd)/$APP"
 echo "built: $(pwd)/build/hush"
 
 if [ "${1:-}" = "install" ]; then
+    # Same destination rule as install.sh, so a source build and a released build never
+    # end up as two copies fighting over the menu bar.
+    if [ -w /Applications ]; then dest="/Applications"; else dest="$HOME/Applications"; fi
     pkill -x Hush 2>/dev/null || true
-    rm -rf "$HOME/Applications/Hush.app"
-    mkdir -p "$HOME/Applications"
-    cp -R "$APP" "$HOME/Applications/Hush.app"
-    echo "installed: $HOME/Applications/Hush.app"
-    cli="$HOME/Applications/Hush.app/Contents/Resources/hush"
+    rm -rf "$dest/Hush.app" "$HOME/Applications/Hush.app"
+    mkdir -p "$dest"
+    cp -R "$APP" "$dest/Hush.app"
+    echo "installed: $dest/Hush.app"
+    cli="$dest/Hush.app/Contents/Resources/hush"
     if ln -sf "$cli" /usr/local/bin/hush 2>/dev/null; then
         echo "linked:    /usr/local/bin/hush"
     else

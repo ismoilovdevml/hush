@@ -31,7 +31,9 @@ No Dock icon, no login item, no network access.
 - Xcode command line tools to build (`xcode-select --install`)
 
 Built and verified against a WH-1000XM6 on firmware 3.1.5. Other Sony headsets that speak
-MDR protocol v2 (XM4, XM5, LinkBuds) may work, but none has been tested.
+MDR protocol v2 (XM4, XM5, LinkBuds) may work: the inquiry types and the equalizer layout are
+asked of the device rather than hard-coded, so a model that answers differently is adapted to
+rather than mishandled. None of them has been tested, though — reports welcome.
 
 ## Install
 
@@ -59,7 +61,8 @@ cd hush
 ```
 
 `./build.sh` alone builds to `build/` without installing. Both binaries are universal
-(arm64 and x86_64).
+(arm64 and x86_64). `./test.sh` runs the protocol tests — no headphones needed, and CI runs
+them on every push.
 
 ## The CLI
 
@@ -168,6 +171,9 @@ NOTIFY  0x59 ...                                 (echoes the new state)
 
 Gadgetbridge's decoder expects clear bass plus five bands and a payload of exactly ten
 bytes, so it does not fit this device.
+
+Neither the ambient inquiry type nor the equalizer layout is assumed: both are probed at
+connect, so a model that answers on a different type still works.
 
 ### Now Playing
 

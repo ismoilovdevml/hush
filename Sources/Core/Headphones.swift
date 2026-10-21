@@ -46,16 +46,28 @@ final class Headphones: ObservableObject {
     @Published var eqPreset: UInt8 = 0x00
     @Published var eqBands: [Int] = Array(repeating: 0, count: 10)
 
-    /// Band centre frequencies, read from the device (0x5A) — 10 octave bands on the XM6.
-    static let eqFrequencies = ["31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
-    /// Presets the XM6 reports in its capability reply (0x51).
-    static let eqPresets: [(code: UInt8, name: String)] = [
-        (0x00, "Off"), (0x30, "Heavy"), (0x31, "Clear"), (0x32, "Hard"),
-        (0x33, "Soft"), (0x20, "Gaming"), (0xA0, "Manual"), (0xA1, "User 1"), (0xA2, "User 2"),
+    /// Band centre frequencies, asked of the device (0x5A). The XM6 answers with ten octave
+    /// bands; another model may answer differently, so this is not hard-coded.
+    @Published var eqFrequencies = ["31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
+    /// Whatever the device lists in its capability reply (0x51), named.
+    @Published var eqPresets: [(code: UInt8, name: String)] = Headphones.allPresets
+
+    static let allPresets: [(code: UInt8, name: String)] = [
+        (0x00, "Off"), (0x01, "Rock"), (0x02, "Pop"), (0x03, "Jazz"), (0x04, "Dance"),
+        (0x05, "EDM"), (0x06, "R&B"), (0x07, "Acoustic"), (0x10, "Bright"), (0x11, "Excited"),
+        (0x12, "Mellow"), (0x13, "Relaxed"), (0x14, "Vocal"), (0x15, "Treble Boost"),
+        (0x16, "Bass Boost"), (0x17, "Speech"), (0x20, "Gaming"), (0x30, "Heavy"),
+        (0x31, "Clear"), (0x32, "Hard"), (0x33, "Soft"), (0xA0, "Manual"),
+        (0xA1, "User 1"), (0xA2, "User 2"), (0xA3, "User 3"),
     ]
-    /// levelSteps is 13, so values travel the wire as dB + 6.
-    private static let eqCenter = 6
     var eqIsManual: Bool { eqPreset >= 0xA0 }
+
+    /// Inquiry types differ between models, so they are discovered rather than assumed.
+    /// On the XM6 ambient sound answers only on 0x19 — see SonyCommand.
+    private var ambientType: UInt8?
+    private var eqType: UInt8?
+    private var eqCenter = 6
+    private var eqBandCount = 10
     @Published var busy = false
 
     private let link: SonyLink
@@ -102,17 +114,17 @@ final class Headphones: ObservableObject {
             let v = names[f.payload[2]] ?? String(format: "0x%02x", f.payload[2])
             Task { @MainActor in self?.codec = v }
         }
-        link.request(Sony.cmd1, [0x66, 0x19], expect: 0x67) { [weak self] f in
-            guard let f else { return }
-            Task { @MainActor in self?.apply(f) }
+        probeAmbientType { [weak self] type in
+            guard let self, let type else { return }
+            self.link.request(Sony.cmd1, SonyCommand.ambientGet(type: type), expect: 0x67) { f in
+                Task { @MainActor in if let f { self.apply(f) } }
+            }
         }
-        link.request(Sony.cmd1, [0x56, 0x00], expect: 0x57) { [weak self] f in
-            guard let f, f.payload.count >= 4 else { return }
-            let n = Int(f.payload[3])
-            guard f.payload.count >= 4 + n else { return }
-            let preset = f.payload[2]
-            let bands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
-            Task { @MainActor in self?.eqPreset = preset; self?.eqBands = Array(bands) }
+        probeEqualizer { [weak self] type in
+            guard let self, let type else { return }
+            self.link.request(Sony.cmd1, SonyCommand.equalizerGet(type: type), expect: 0x57) { f in
+                Task { @MainActor in if let f { self.applyEQ(f) } }
+            }
         }
         // last in the queue, so its completion means every read above has landed
         link.request(Sony.cmd1, [0xE6, 0x01], expect: 0xE7) { [weak self] f in
@@ -123,13 +135,69 @@ final class Headphones: ObservableObject {
         }
     }
 
-    /// Decode an ambient-sound RET (0x67) or NOTIFY (0x69).
-    /// Layout on XM6: [op, 0x19, 0x01, on, ambientFlag, focusOnVoice, level, 0x00, 0x00]
     private func apply(_ f: SonyFrame) {
-        guard f.opcode == 0x67 || f.opcode == 0x69, f.payload.count >= 7, f.payload[1] == 0x19 else { return }
-        anc = f.payload[3] == 0 ? .off : (f.payload[4] == 1 ? .ambient : .noiseCancelling)
-        focusOnVoice = f.payload[5] == 1
-        ambientLevel = Double(min(f.payload[6], 20))
+        guard let parsed = SonyCommand.parseAmbient(f.payload) else { return }
+        switch parsed.mode {
+        case .off: anc = .off
+        case .noiseCancelling: anc = .noiseCancelling
+        case .ambient: anc = .ambient
+        }
+        focusOnVoice = parsed.focusOnVoice
+        ambientLevel = Double(parsed.level)
+    }
+
+    /// Ask each known inquiry type in turn and keep the one that answers. On the XM6 that is
+    /// 0x19; 0x15 and 0x22 stay silent and 0x17 returns a stale all-zero payload, which is why
+    /// 0x19 is tried first.
+    private func probeAmbientType(_ done: @escaping (UInt8?) -> Void) {
+        if let ambientType { return done(ambientType) }
+        func attempt(_ remaining: ArraySlice<UInt8>) {
+            guard let type = remaining.first else { return done(nil) }
+            link.request(Sony.cmd1, SonyCommand.ambientGet(type: type), expect: 0x67) { [weak self] f in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let f, f.payload.count > 1, f.payload[1] == type {
+                        self.ambientType = type
+                        done(type)
+                    } else {
+                        attempt(remaining.dropFirst())
+                    }
+                }
+            }
+        }
+        attempt(SonyCommand.ambientTypes[...])
+    }
+
+    /// The equalizer describes itself: band count, level steps, presets and centre frequencies.
+    private func probeEqualizer(_ done: @escaping (UInt8?) -> Void) {
+        if let eqType { return done(eqType) }
+        func attempt(_ remaining: ArraySlice<UInt8>) {
+            guard let type = remaining.first else { return done(nil) }
+            link.request(Sony.cmd1, SonyCommand.equalizerCapabilityGet(type: type), expect: 0x51) { [weak self] f in
+                Task { @MainActor in
+                    guard let self else { return }
+                    guard let f, let capability = SonyCommand.parseEqualizerCapability(f.payload) else {
+                        return attempt(remaining.dropFirst())
+                    }
+                    self.eqType = type
+                    self.eqCenter = SonyCommand.center(levelSteps: capability.levelSteps)
+                    self.eqBandCount = capability.bandCount
+                    let names = Dictionary(uniqueKeysWithValues: Headphones.allPresets.map { ($0.code, $0.name) })
+                    self.eqPresets = capability.presets.map {
+                        ($0, names[$0] ?? String(format: "0x%02X", $0))
+                    }
+                    self.link.request(Sony.cmd1, SonyCommand.equalizerBandsGet(type: type), expect: 0x5B) { bands in
+                        Task { @MainActor in
+                            if let bands, let hz = SonyCommand.parseEqualizerFrequencies(bands.payload) {
+                                self.eqFrequencies = hz.map(SonyCommand.frequencyLabel)
+                            }
+                            done(type)
+                        }
+                    }
+                }
+            }
+        }
+        attempt(SonyCommand.equalizerTypes[...])
     }
 
     // MARK: writes
@@ -141,37 +209,50 @@ final class Headphones: ObservableObject {
 
     func pushANC(completion: (() -> Void)? = nil) {
         busy = true
-        let on: UInt8 = anc == .off ? 0 : 1
-        let ambientFlag: UInt8 = anc == .ambient ? 1 : 0
-        let payload: [UInt8] = [0x68, 0x19, 0x01, on, ambientFlag,
-                                focusOnVoice ? 1 : 0, UInt8(ambientLevel.rounded())]
-        link.request(Sony.cmd1, payload, expect: 0x69) { [weak self] f in
-            Task { @MainActor in
-                self?.busy = false
-                if let f { self?.apply(f) }
-                completion?()
+        probeAmbientType { [weak self] type in
+            guard let self else { return }
+            guard let type else { self.busy = false; completion?(); return }
+            let mode: SonyCommand.AmbientMode = self.anc == .off ? .off
+                : (self.anc == .ambient ? .ambient : .noiseCancelling)
+            let payload = SonyCommand.ambientSet(type: type, mode: mode,
+                                                 focusOnVoice: self.focusOnVoice,
+                                                 level: Int(self.ambientLevel.rounded()))
+            self.link.request(Sony.cmd1, payload, expect: 0x69) { f in
+                Task { @MainActor in
+                    self.busy = false
+                    if let f { self.apply(f) }
+                    completion?()
+                }
             }
         }
     }
 
     func setEQPreset(_ preset: UInt8, completion: (() -> Void)? = nil) {
         eqPreset = preset
-        link.request(Sony.cmd1, [0x58, 0x00, preset, 0x00], expect: 0x59) { [weak self] f in
-            Task { @MainActor in
-                if let f { self?.applyEQ(f) }
-                completion?()
+        probeEqualizer { [weak self] type in
+            guard let self, let type else { completion?(); return }
+            self.link.request(Sony.cmd1,
+                              SonyCommand.equalizerPresetSet(type: type, preset: preset),
+                              expect: 0x59) { f in
+                Task { @MainActor in
+                    if let f { self.applyEQ(f) }
+                    completion?()
+                }
             }
         }
     }
 
     func pushEQBands(completion: (() -> Void)? = nil) {
-        eqPreset = 0xA0
-        let payload: [UInt8] = [0x58, 0x00, 0xA0, UInt8(eqBands.count)]
-            + eqBands.map { UInt8(min(max($0, -6), 6) + Headphones.eqCenter) }
-        link.request(Sony.cmd1, payload, expect: 0x59) { [weak self] f in
-            Task { @MainActor in
-                if let f { self?.applyEQ(f) }
-                completion?()
+        eqPreset = SonyCommand.manualPreset
+        probeEqualizer { [weak self] type in
+            guard let self, let type else { completion?(); return }
+            let payload = SonyCommand.equalizerBandsSet(type: type, bands: self.eqBands,
+                                                        center: self.eqCenter)
+            self.link.request(Sony.cmd1, payload, expect: 0x59) { f in
+                Task { @MainActor in
+                    if let f { self.applyEQ(f) }
+                    completion?()
+                }
             }
         }
     }
@@ -186,11 +267,9 @@ final class Headphones: ObservableObject {
     }
 
     private func applyEQ(_ f: SonyFrame) {
-        guard f.payload.count >= 4 else { return }
-        let n = Int(f.payload[3])
-        guard f.payload.count >= 4 + n else { return }
-        eqPreset = f.payload[2]
-        eqBands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
+        guard let parsed = SonyCommand.parseEqualizer(f.payload, center: eqCenter) else { return }
+        eqPreset = parsed.preset
+        eqBands = parsed.bands
     }
 
     func setDSEE(_ on: Bool, completion: (() -> Void)? = nil) {

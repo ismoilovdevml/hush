@@ -19,6 +19,15 @@ final class ControlService {
 
     private func fail(_ message: String) -> [String: Any] { ["ok": false, "error": message] }
 
+    /// Answer a write with freshly read state. A one-shot CLI process has read nothing yet,
+    /// so replying from cached values would print defaults that are simply untrue.
+    private func replyWithState(_ reply: @escaping ([String: Any]) -> Void) {
+        headphones.refresh { [weak self] in
+            guard let self else { return }
+            reply(self.state())
+        }
+    }
+
     func execute(_ request: [String: Any], reply: @escaping ([String: Any]) -> Void) {
         let command = (request["cmd"] as? String) ?? ""
 
@@ -39,8 +48,7 @@ final class ControlService {
             }
             if let focus = request["focus"] as? Bool { headphones.focusOnVoice = focus }
             headphones.setANC(mode) { [weak self] in
-                guard let self else { return }
-                reply(self.state())
+                self?.replyWithState(reply)
             }
 
         case "eq":
@@ -53,29 +61,26 @@ final class ControlService {
                 }
                 headphones.eqBands = bands
                 headphones.pushEQBands { [weak self] in
-                    guard let self else { return }
-                    reply(self.state())
+                    self?.replyWithState(reply)
                 }
             } else if let preset = request["preset"] as? String {
-                guard let match = Headphones.eqPresets.first(where: {
+                guard let match = Headphones.allPresets.first(where: {
                     $0.name.lowercased().replacingOccurrences(of: " ", with: "") == preset.lowercased()
                 }) else {
-                    let names = Headphones.eqPresets.map { $0.name }.joined(separator: ", ")
+                    let names = Headphones.allPresets.map { $0.name }.joined(separator: ", ")
                     return reply(fail("eq: unknown preset '\(preset)' — try one of: \(names)"))
                 }
                 headphones.setEQPreset(match.code) { [weak self] in
-                    guard let self else { return }
-                    reply(self.state())
+                    self?.replyWithState(reply)
                 }
             } else {
-                reply(state())
+                replyWithState(reply)
             }
 
         case "dsee":
             guard let on = request["on"] as? Bool else { return reply(fail("dsee: on must be true or false")) }
             headphones.setDSEE(on) { [weak self] in
-                guard let self else { return }
-                reply(self.state())
+                self?.replyWithState(reply)
             }
 
         case "volume":
@@ -126,9 +131,9 @@ final class ControlService {
             "ambientLevel": Int(hp.ambientLevel),
             "focusOnVoice": hp.focusOnVoice,
             "dsee": hp.dsee,
-            "eqPreset": Headphones.eqPresets.first { $0.code == hp.eqPreset }?.name ?? "unknown",
+            "eqPreset": Headphones.allPresets.first { $0.code == hp.eqPreset }?.name ?? "unknown",
             "eqBands": hp.eqBands,
-            "eqFrequencies": Headphones.eqFrequencies,
+            "eqFrequencies": hp.eqFrequencies,
             "volume": Int(SystemVolume.get().rounded()),
         ]
         if let battery = hp.battery {

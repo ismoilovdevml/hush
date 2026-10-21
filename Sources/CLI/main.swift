@@ -184,7 +184,7 @@ MainActor.assumeIsolated {
     var answer: [String: Any]?
     service.execute(request) { answer = $0 }
 
-    let deadline = Date().addingTimeInterval(8)
+    let deadline = Date().addingTimeInterval(15)
     while answer == nil, Date() < deadline {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
