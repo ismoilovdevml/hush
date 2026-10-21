@@ -65,6 +65,8 @@ cd hush
 
 Everything the panel does, `hush` does — useful for scripts, hotkeys and Shortcuts.
 
+<img src="docs/cli.svg" width="640" alt="hush in a terminal, showing battery, codec, firmware, ANC, the equalizer curve and the current track">
+
 ```sh
 hush                              # battery, codec, firmware, ANC, EQ, volume, now playing
 hush status --json                # the same, for scripting

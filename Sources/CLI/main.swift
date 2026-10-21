@@ -154,7 +154,8 @@ func printHuman(_ r: [String: Any]) {
         for (i, value) in bands.enumerated() where i < freqs.count {
             let bar = value >= 0 ? String(repeating: "#", count: value)
                                  : String(repeating: "-", count: -value)
-            print(String(format: "    %-5@ %+3d  %@", freqs[i] as NSString, value, bar as NSString))
+            let label = freqs[i].padding(toLength: 4, withPad: " ", startingAt: 0)
+            print(String(format: "    %@ %+3d  %@", label, value, bar))
         }
     }
     if let playing = r["nowPlaying"] as? [String: Any] {
