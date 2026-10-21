@@ -115,8 +115,12 @@ Firmware update is not implemented and will not be. Use Sound Connect on a phone
   worked out, so Hush does not write EQ.
 - **Speak-to-chat is read-only** — it reads fine on `0xF6 0x05`, but writing it goes
   through `0xF8`, which is factory reset on this protocol version.
-- **No LDAC.** macOS negotiated AAC with this headset; Hush reports the codec but cannot
-  change it.
+- **No LDAC.** macOS negotiates AAC with this headset, and its Bluetooth stack will not use
+  LDAC. An app can still get there, but only by replacing the entire audio path: a virtual
+  Core Audio HAL output device, its own LDAC encoder and its own transmission — which is
+  what [Acouplet](https://github.com/baglayan/acouplet) does, at the cost of an admin-
+  installed plug-in and a reboot. Hush does not go there; it reports the codec and leaves
+  playback to macOS.
 - **Apple Silicon only** — `build.sh` targets `arm64`. Adding `x86_64` is a one-line change
   if someone needs it.
 - Ad-hoc signing means the signature changes on every build. Nothing depends on it today,
