@@ -7,7 +7,7 @@ allow/deny lists in SonyLink.swift are checked here rather than trusted.
 import re
 import sys
 
-SOURCE = "Sources/SonyLink.swift"
+SOURCE = "Sources/Core/SonyLink.swift"
 DESTRUCTIVE = {
     0xF8: "factory reset",
     0x98: "system control / reboot",

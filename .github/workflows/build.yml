@@ -33,7 +33,8 @@ jobs:
             "$APP/Contents/MacOS/Hush" \
             "$APP/Contents/Info.plist" \
             "$APP/Contents/Resources/mediaremote-adapter.pl" \
-            "$APP/Contents/Resources/MediaRemoteAdapter.framework/MediaRemoteAdapter"
+            "$APP/Contents/Resources/MediaRemoteAdapter.framework/MediaRemoteAdapter" \
+            "$APP/Contents/Resources/hush"
           do
             if [ -e "$path" ]; then
               echo "ok    $path"
@@ -43,11 +44,31 @@ jobs:
           done
           exit $fail
 
-      - name: Check the binary is arm64 and the signature verifies
+      - name: Check both binaries are universal and the signature verifies
         run: |
           set -euo pipefail
-          file build/Hush.app/Contents/MacOS/Hush | tee /dev/stderr | grep -q arm64
+          for bin in build/Hush.app/Contents/MacOS/Hush build/Hush.app/Contents/Resources/hush; do
+            archs=$(lipo -archs "$bin")
+            echo "$bin: $archs"
+            echo "$archs" | grep -q arm64
+            echo "$archs" | grep -q x86_64
+          done
+          # the CLI must not be the app binary: on a case-insensitive filesystem that mistake
+          # is silent, so compare them
+          cmp -s build/Hush.app/Contents/MacOS/Hush build/Hush.app/Contents/Resources/hush \
+            && { echo "FAIL: the CLI and the app are the same binary"; exit 1; }
+          echo "ok: the app and the CLI are distinct binaries"
           codesign --verify --deep --strict --verbose=2 build/Hush.app
+
+      - name: Check the CLI answers
+        run: |
+          set -euo pipefail
+          build/Hush.app/Contents/Resources/hush --help | head -3
+          # no headphones on a runner, so it must fail cleanly rather than hang or crash
+          out=$(build/Hush.app/Contents/Resources/hush status --json || true)
+          echo "$out"
+          echo "$out" | grep -q '"ok"'
+          echo "ok: the CLI exits cleanly with no device present"
 
       - name: Check the adapter framework exports the symbols the perl script calls
         run: |
