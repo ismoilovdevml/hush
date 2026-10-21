@@ -8,7 +8,7 @@ Sony's Sound Connect app is iPhone-only, so on a Mac there is no way to change n
 cancelling, read the battery or toggle DSEE. Hush talks to the headphones directly over
 Bluetooth RFCOMM using Sony's own MDR protocol.
 
-<img src="docs/screenshot.png" width="360" alt="The Hush panel: noise cancelling modes, now playing, equalizer and DSEE">
+<img src="docs/panel-equalizer.png" width="360" alt="The Hush panel: noise cancelling modes, now playing, equalizer and DSEE">
 
 ## What it does
 
