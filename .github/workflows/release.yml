@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent build/Hush.app Hush.app.zip
+          shasum -a 256 Hush.app.zip | tee checksum.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Hush.app.zip
+            checksum.txt
+          generate_release_notes: true
+          body: |
+            Unzip and move `Hush.app` to `/Applications`.
+
+            The app is ad-hoc signed and not notarised, so macOS will refuse the
+            first launch from Finder — right-click the app and choose **Open**.

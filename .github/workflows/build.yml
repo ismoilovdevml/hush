@@ -1,0 +1,71 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and check the app bundle
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+          clang --version | head -1
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Check the bundle is complete
+        run: |
+          set -euo pipefail
+          APP=build/Hush.app
+          fail=0
+          for path in \
+            "$APP/Contents/MacOS/Hush" \
+            "$APP/Contents/Info.plist" \
+            "$APP/Contents/Resources/mediaremote-adapter.pl" \
+            "$APP/Contents/Resources/MediaRemoteAdapter.framework/MediaRemoteAdapter"
+          do
+            if [ -e "$path" ]; then
+              echo "ok    $path"
+            else
+              echo "MISSING $path"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Check the binary is arm64 and the signature verifies
+        run: |
+          set -euo pipefail
+          file build/Hush.app/Contents/MacOS/Hush | tee /dev/stderr | grep -q arm64
+          codesign --verify --deep --strict --verbose=2 build/Hush.app
+
+      - name: Check the adapter framework exports the symbols the perl script calls
+        run: |
+          set -euo pipefail
+          FW=build/Hush.app/Contents/Resources/MediaRemoteAdapter.framework/MediaRemoteAdapter
+          for sym in adapter_get_env adapter_stream_env adapter_send_env adapter_test; do
+            if nm -gU "$FW" | grep -q "_$sym$"; then
+              echo "ok      $sym"
+            else
+              echo "MISSING $sym"; exit 1
+            fi
+          done
+
+      - name: Check the opcode policy
+        run: python3 .github/scripts/check_opcodes.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hush.app
+          path: build/Hush.app
+          if-no-files-found: error

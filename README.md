@@ -1,12 +1,14 @@
 # Hush
 
+[![Build](https://github.com/ismoilovdevml/hush/actions/workflows/build.yml/badge.svg)](https://github.com/ismoilovdevml/hush/actions/workflows/build.yml)
+
 Menu bar control for Sony WH-1000XM6 headphones on macOS.
 
 Sony's Sound Connect app is iPhone-only, so on a Mac there is no way to change noise
 cancelling, read the battery or toggle DSEE. Hush talks to the headphones directly over
 Bluetooth RFCOMM using Sony's own MDR protocol.
 
-<img src="docs/screenshot.png" width="316" alt="Hush panel">
+<img src="docs/screenshot.png" width="360" alt="The Hush panel: noise cancelling modes, now playing, equalizer and DSEE">
 
 ## What it does
 
@@ -38,7 +40,8 @@ cd hush
 open ~/Applications/Hush.app
 ```
 
-`./build.sh` alone builds to `build/Hush.app` without installing.
+`./build.sh` alone builds to `build/Hush.app` without installing. A prebuilt
+`Hush.app.zip` is attached to every tagged release.
 
 The app is ad-hoc signed, so macOS will warn the first time: right-click → Open.
 
