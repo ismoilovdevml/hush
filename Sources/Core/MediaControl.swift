@@ -112,31 +112,3 @@ enum SystemVolume {
                                                 &devAddr, DispatchQueue.main, listener)
     }
 }
-
-/// Is anything actually sending audio to the output right now?
-/// `kAudioDevicePropertyDeviceIsRunningSomewhere` cannot answer this: a paused browser keeps its
-/// stream open, so it stays true through a pause (measured). The per-process API is accurate —
-/// it named the one real emitter, "Google Chrome Helper (Aperitif)".
-enum AudioActivity {
-    static func isPlaying() -> Bool {
-        var listAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
-                                                  mScope: kAudioObjectPropertyScopeGlobal,
-                                                  mElement: kAudioObjectPropertyElementMain)
-        var size = UInt32(0)
-        let sys = AudioObjectID(kAudioObjectSystemObject)
-        guard AudioObjectGetPropertyDataSize(sys, &listAddr, 0, nil, &size) == noErr, size > 0 else { return false }
-
-        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(sys, &listAddr, 0, nil, &size, &ids) == noErr else { return false }
-
-        for id in ids {
-            var addr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunningOutput,
-                                                  mScope: kAudioObjectPropertyScopeGlobal,
-                                                  mElement: kAudioObjectPropertyElementMain)
-            var running = UInt32(0)
-            var s = UInt32(MemoryLayout<UInt32>.size)
-            if AudioObjectGetPropertyData(id, &addr, 0, nil, &s, &running) == noErr, running != 0 { return true }
-        }
-        return false
-    }
-}

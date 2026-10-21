@@ -42,7 +42,6 @@ final class Headphones: ObservableObject {
     @Published var focusOnVoice = false
     @Published var dsee = false
     @Published var volume: Double = 50
-    @Published var playing = false
     @Published var mediaKeysAllowed = true
     @Published var eqPreset: UInt8 = 0x00
     @Published var eqBands: [Int] = Array(repeating: 0, count: 10)
@@ -61,7 +60,6 @@ final class Headphones: ObservableObject {
 
     private let link: SonyLink
     private var poll: Timer?
-    private var live: Timer?
 
     init(address: String) {
         link = SonyLink(address: address)
@@ -72,7 +70,6 @@ final class Headphones: ObservableObject {
             Task { @MainActor in self?.apply(f) }
         }
         volume = SystemVolume.get()
-        playing = AudioActivity.isPlaying()
         mediaKeysAllowed = MediaKeyAuth.trusted
         SystemVolume.observe { [weak self] in
             Task { @MainActor in self?.volume = SystemVolume.get() }
@@ -82,31 +79,13 @@ final class Headphones: ObservableObject {
         }
     }
 
-    /// Poll playback state only while the panel is on screen — there is no notification for it.
-    func setLive(_ on: Bool) {
-        live?.invalidate(); live = nil
-        guard on else { return }
-        playing = AudioActivity.isPlaying()
-        mediaKeysAllowed = MediaKeyAuth.trusted
-        live = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.playing = AudioActivity.isPlaying() }
-        }
-    }
-
-    func togglePlayback() {
-        MediaKey.playPause.post()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            Task { @MainActor in self?.playing = AudioActivity.isPlaying() }
-        }
-    }
-
     // MARK: reads
 
-    func refresh() {
-        guard link.connect() else { connected = false; return }
+    func refresh(completion: (() -> Void)? = nil) {
+        guard link.connect() else { connected = false; completion?(); return }
         connected = true
         volume = SystemVolume.get()
-        playing = AudioActivity.isPlaying()
+        mediaKeysAllowed = MediaKeyAuth.trusted
 
         link.request(Sony.cmd1, [0x04, 0x02], expect: 0x05) { [weak self] f in
             guard let f, f.payload.count > 3 else { return }
@@ -135,9 +114,12 @@ final class Headphones: ObservableObject {
             let bands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
             Task { @MainActor in self?.eqPreset = preset; self?.eqBands = Array(bands) }
         }
+        // last in the queue, so its completion means every read above has landed
         link.request(Sony.cmd1, [0xE6, 0x01], expect: 0xE7) { [weak self] f in
-            guard let f, f.payload.count >= 3 else { return }
-            Task { @MainActor in self?.dsee = f.payload[2] == 1 }
+            Task { @MainActor in
+                if let f, f.payload.count >= 3 { self?.dsee = f.payload[2] == 1 }
+                completion?()
+            }
         }
     }
 
@@ -152,12 +134,12 @@ final class Headphones: ObservableObject {
 
     // MARK: writes
 
-    func setANC(_ mode: ANC) {
+    func setANC(_ mode: ANC, completion: (() -> Void)? = nil) {
         anc = mode
-        pushANC()
+        pushANC(completion: completion)
     }
 
-    func pushANC() {
+    func pushANC(completion: (() -> Void)? = nil) {
         busy = true
         let on: UInt8 = anc == .off ? 0 : 1
         let ambientFlag: UInt8 = anc == .ambient ? 1 : 0
@@ -167,23 +149,40 @@ final class Headphones: ObservableObject {
             Task { @MainActor in
                 self?.busy = false
                 if let f { self?.apply(f) }
+                completion?()
             }
         }
     }
 
-    func setEQPreset(_ preset: UInt8) {
+    func setEQPreset(_ preset: UInt8, completion: (() -> Void)? = nil) {
         eqPreset = preset
         link.request(Sony.cmd1, [0x58, 0x00, preset, 0x00], expect: 0x59) { [weak self] f in
-            guard let f else { return }
-            Task { @MainActor in self?.applyEQ(f) }
+            Task { @MainActor in
+                if let f { self?.applyEQ(f) }
+                completion?()
+            }
         }
     }
 
-    func pushEQBands() {
+    func pushEQBands(completion: (() -> Void)? = nil) {
         eqPreset = 0xA0
         let payload: [UInt8] = [0x58, 0x00, 0xA0, UInt8(eqBands.count)]
             + eqBands.map { UInt8(min(max($0, -6), 6) + Headphones.eqCenter) }
-        link.request(Sony.cmd1, payload, expect: 0x59) { _ in }
+        link.request(Sony.cmd1, payload, expect: 0x59) { [weak self] f in
+            Task { @MainActor in
+                if let f { self?.applyEQ(f) }
+                completion?()
+            }
+        }
+    }
+
+    /// Developer escape hatch: send one frame and hand back whatever comes in reply.
+    /// Still subject to the opcode allow list in SonyLink.
+    func sendRaw(dataType: UInt8, payload: [UInt8], expect: UInt8,
+                 completion: @escaping ([UInt8]?) -> Void) {
+        link.request(dataType, payload, expect: expect) { f in
+            Task { @MainActor in completion(f?.payload) }
+        }
     }
 
     private func applyEQ(_ f: SonyFrame) {
@@ -194,9 +193,11 @@ final class Headphones: ObservableObject {
         eqBands = f.payload.dropFirst(4).prefix(n).map { Int($0) - Headphones.eqCenter }
     }
 
-    func setDSEE(_ on: Bool) {
+    func setDSEE(_ on: Bool, completion: (() -> Void)? = nil) {
         dsee = on
-        link.request(Sony.cmd1, [0xE8, 0x01, on ? 1 : 0], expect: 0xE9) { _ in }
+        link.request(Sony.cmd1, [0xE8, 0x01, on ? 1 : 0], expect: 0xE9) { _ in
+            Task { @MainActor in completion?() }
+        }
     }
 
     func setVolume(_ v: Double) {

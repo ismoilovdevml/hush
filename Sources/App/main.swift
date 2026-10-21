@@ -2,15 +2,6 @@ import AppKit
 import SwiftUI
 import IOBluetooth
 
-/// Pick a paired Sony headset. Prefer one that is currently connected.
-func findHeadset() -> (name: String, address: String)? {
-    guard let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return nil }
-    let sony = paired.filter { ($0.name ?? "").range(of: #"WH-|WF-|WI-|LinkBuds|ULT"#, options: .regularExpression) != nil }
-    let pick = sony.first(where: { $0.isConnected() }) ?? sony.first
-    guard let d = pick, let addr = d.addressString else { return nil }
-    return (d.name ?? "Headphones", addr)
-}
-
 /// Borderless panel that sits strictly inside the screen's visibleFrame, so it can never
 /// slide under the menu bar or the camera notch the way an NSPopover does.
 final class PanelWindow: NSPanel {
@@ -89,6 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         np = NowPlaying()
         np.start()
+        // Serve the CLI: it cannot open channel 9 itself while this app holds it.
+        let service = ControlService(headphones: hp, nowPlaying: np)
+        ControlSocket.serve { request, respond in
+            MainActor.assumeIsolated { service.execute(request, reply: respond) }
+        }
+
         let host = NSHostingView(rootView: PanelView(hp: hp, np: np))
         panel = PanelWindow(content: host)
 
@@ -109,7 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func show() {
         hp.refresh()
-        hp.setLive(true)
         guard let b = statusItem.button, let w = b.window,
               let screen = w.screen ?? NSScreen.main else { return }
         panel.layoutIfNeeded()
@@ -138,7 +134,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel?.isVisible == true else { return }
         if let m = outsideClick { NSEvent.removeMonitor(m); outsideClick = nil }
         if let m = escKey { NSEvent.removeMonitor(m); escKey = nil }
-        hp.setLive(false)
         panel.orderOut(nil)
         statusItem.button?.highlight(false)
     }

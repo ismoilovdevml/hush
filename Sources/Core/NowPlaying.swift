@@ -23,9 +23,24 @@ final class NowPlaying: ObservableObject {
     private var task: Process?
     private var buffer = Data()
 
-    private var script: String? { Bundle.main.path(forResource: "mediaremote-adapter", ofType: "pl") }
+    /// The CLI runs outside the bundle, so fall back to an installed copy of the app.
+    private static let resourceDirectory: String? = {
+        var candidates: [String] = []
+        if let own = Bundle.main.resourceURL?.path { candidates.append(own) }
+        candidates += [
+            "\(NSHomeDirectory())/Applications/Hush.app/Contents/Resources",
+            "/Applications/Hush.app/Contents/Resources",
+        ]
+        return candidates.first {
+            FileManager.default.fileExists(atPath: "\($0)/mediaremote-adapter.pl")
+        }
+    }()
+
+    private var script: String? {
+        Self.resourceDirectory.map { "\($0)/mediaremote-adapter.pl" }
+    }
     private var framework: String? {
-        Bundle.main.resourceURL?.appendingPathComponent("MediaRemoteAdapter.framework").path
+        Self.resourceDirectory.map { "\($0)/MediaRemoteAdapter.framework" }
     }
 
     func start() {

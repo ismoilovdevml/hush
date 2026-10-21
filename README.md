@@ -20,11 +20,13 @@ Bluetooth RFCOMM using Sony's own MDR protocol.
 - **Now Playing** — artwork, title, artist, and transport that works with any player, browsers included
 - **Volume**, kept in step with the system volume
 
+It also ships a `hush` command line tool that drives the same headphones — see below.
+
 No Dock icon, no login item, no network access.
 
 ## Requirements
 
-- Apple Silicon Mac, macOS 14 or later
+- macOS 13 or later, Apple silicon or Intel
 - Headphones paired and connected in macOS Bluetooth
 - Xcode command line tools to build (`xcode-select --install`)
 
@@ -34,16 +36,65 @@ MDR protocol v2 (XM4, XM5, LinkBuds) may work, but none has been tested.
 ## Install
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/ismoilovdevml/hush/main/install.sh | bash
+```
+
+It checks the macOS version and the architecture, pulls the latest release, verifies its
+checksum, clears the quarantine flag so Gatekeeper does not block the first launch, links
+the `hush` CLI and opens the app.
+
+Piping a script into a shell means trusting it. To read it first:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ismoilovdevml/hush/main/install.sh -o install.sh
+less install.sh && bash install.sh
+```
+
+### From source
+
+```sh
 git clone https://github.com/ismoilovdevml/hush.git
 cd hush
 ./build.sh install
-open ~/Applications/Hush.app
 ```
 
-`./build.sh` alone builds to `build/Hush.app` without installing. A prebuilt
-`Hush.app.zip` is attached to every tagged release.
+`./build.sh` alone builds to `build/` without installing. Both binaries are universal
+(arm64 and x86_64).
 
-The app is ad-hoc signed, so macOS will warn the first time: right-click → Open.
+## The CLI
+
+Everything the panel does, `hush` does — useful for scripts, hotkeys and Shortcuts.
+
+```sh
+hush                              # battery, codec, firmware, ANC, EQ, volume, now playing
+hush status --json                # the same, for scripting
+
+hush anc nc                       # noise cancelling
+hush anc ambient --level 12 --focus
+hush anc off
+
+hush eq                           # show the curve
+hush eq manual                    # or off, heavy, clear, hard, soft, gaming, user1, user2
+hush eq set 3 2 0 0 -1 0 0 2 3 4  # ten bands, each -6 to +6
+
+hush dsee on
+hush volume 40
+hush play | pause | toggle | next | prev
+
+hush raw "66 19"                  # send one frame, print the reply
+```
+
+The headphones accept only one RFCOMM connection, so `hush` talks to the running app over a
+unix socket in `~/Library/Application Support/Hush` and only opens the channel itself when
+no app is running. Either way it runs the same code, so the behaviour does not change.
+
+`hush raw` is a developer escape hatch, not a way around the opcode policy — a blocked
+opcode is refused there too:
+
+```
+$ hush raw "f8 00"
+error: no reply (opcode refused, or the headphones stayed quiet)
+```
 
 ## How it works
 
@@ -150,8 +201,6 @@ Firmware update is not implemented and will not be. Use Sound Connect on a phone
   what [Acouplet](https://github.com/baglayan/acouplet) does, at the cost of an admin-
   installed plug-in and a reboot. Hush does not go there; it reports the codec and leaves
   playback to macOS.
-- **Apple Silicon only** — `build.sh` targets `arm64`. Adding `x86_64` is a one-line change
-  if someone needs it.
 - Ad-hoc signing means the signature changes on every build. Nothing depends on it today,
   but if you re-enable the media-key fallback, its Accessibility grant will need regranting
   after each rebuild.
