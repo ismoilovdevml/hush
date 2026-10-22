@@ -96,13 +96,13 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     @available(macOS 26.0, *)
     private func apply(to view: NSGlassEffectView) {
         view.cornerRadius = cornerRadius
-        // Clear glass keeps no body of its own. Over a white page the pill all but vanished
-        // and white labels were left floating on the page behind. A faint tint gives the
-        // glass something to stand on without turning it back into a solid block.
-        view.tintColor = tint ?? (scheme == .dark
-                                  ? NSColor.black.withAlphaComponent(0.28)
-                                  : NSColor.white.withAlphaComponent(0.30))
-        view.style = scheme == .dark ? .clear : .regular
+        view.tintColor = tint
+        // Regular, not clear, in both appearances. Clear glass carries almost no body: the
+        // page behind read straight through the pills, logo and all. Control Center takes the
+        // background's colour but hides its detail, which is what regular does — the earlier
+        // judgement that it was "too solid" came from comparing a light-appearance panel
+        // against a dark-appearance Control Center.
+        view.style = .regular
     }
 }
 
