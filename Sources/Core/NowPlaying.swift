@@ -17,11 +17,37 @@ final class NowPlaying: ObservableObject {
     @Published var artwork: NSImage?
     @Published var playing = false
     @Published var hasMedia = false
+    @Published var duration: Double = 0
+    /// Where playback stood at `elapsedAt`. Live position is derived from it, so the bar can
+    /// move every second without asking the adapter again.
+    @Published var elapsed: Double = 0
+    @Published var elapsedAt = Date()
+    /// The app doing the playing, so the panel can bring it forward.
+    @Published var bundleIdentifier: String?
+
+    /// Playback position now, carried forward from the last report while playing.
+    func position(at moment: Date = Date()) -> Double {
+        guard duration > 0 else { return 0 }
+        let drift = playing ? moment.timeIntervalSince(elapsedAt) : 0
+        return min(max(elapsed + drift, 0), duration)
+    }
+
+    func openPlayer() {
+        guard let bundleIdentifier,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
     /// False when the adapter could not start — Apple may yet close this path.
     @Published var available = true
 
     private var task: Process?
     private var buffer = Data()
+    private static let timestamps: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
 
     /// The CLI runs outside the bundle, so fall back to an installed copy of the app.
     private static let resourceDirectory: String? = {
@@ -100,11 +126,26 @@ final class NowPlaying: ObservableObject {
 
     private func apply(_ p: [String: Any]) {
         guard let t = p["title"] as? String, !t.isEmpty else {
-            if p.isEmpty { hasMedia = false; title = ""; artist = ""; artwork = nil; playing = false }
+            if p.isEmpty {
+                hasMedia = false; title = ""; artist = ""; artwork = nil; playing = false
+                duration = 0; elapsed = 0; bundleIdentifier = nil
+            }
             return
         }
         hasMedia = true
         title = t
+        if let d = p["duration"] as? NSNumber { duration = d.doubleValue }
+        if let e = p["elapsedTime"] as? NSNumber {
+            elapsed = e.doubleValue
+            // The adapter stamps when the position was taken; without it the bar would jump
+            // backwards every time a report arrives late.
+            if let stamp = p["timestamp"] as? String, let at = Self.timestamps.date(from: stamp) {
+                elapsedAt = at
+            } else {
+                elapsedAt = Date()
+            }
+        }
+        if let bundle = p["bundleIdentifier"] as? String { bundleIdentifier = bundle }
         artist = (p["artist"] as? String) ?? ""
         if let n = p["playing"] as? NSNumber { playing = n.boolValue }
         else if let r = p["playbackRate"] as? NSNumber { playing = r.doubleValue > 0 }

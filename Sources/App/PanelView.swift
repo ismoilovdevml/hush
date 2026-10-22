@@ -117,6 +117,49 @@ private struct TransportButton: View {
     }
 }
 
+/// Scrolls its text when it does not fit, and sits still when it does.
+private struct Marquee: View {
+    let text: String
+    var font: Font = .system(size: 12, weight: .medium)
+
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var shift: CGFloat = 0
+
+    private var overflow: CGFloat { max(textWidth - boxWidth, 0) }
+
+    var body: some View {
+        GeometryReader { geo in
+            Text(text)
+                .font(font)
+                .lineLimit(1)
+                .fixedSize()
+                .background(GeometryReader { inner in
+                    Color.clear.onAppear { textWidth = inner.size.width }
+                        .onChange(of: text) { _ in textWidth = inner.size.width }
+                })
+                .offset(x: shift)
+                .frame(width: geo.size.width, alignment: .leading)
+                .clipped()
+                .onAppear { boxWidth = geo.size.width; restart() }
+                .onChange(of: text) { _ in restart() }
+                .onChange(of: overflow) { _ in restart() }
+        }
+        .frame(height: 15)
+    }
+
+    private func restart() {
+        shift = 0
+        guard overflow > 1 else { return }
+        // out and back, with a pause at each end, rather than a loop that snaps
+        withAnimation(.linear(duration: Double(overflow) / 22)
+            .delay(1.6)
+            .repeatForever(autoreverses: true)) {
+            shift = -overflow
+        }
+    }
+}
+
 /// A slider drawn by hand.
 ///
 /// The system one greys out whenever the app is not frontmost - taking a screenshot is
@@ -399,29 +442,72 @@ struct PanelView: View {
     }
 
     private var nowPlaying: some View {
-        HStack(spacing: 9) {
-            Group {
-                if let artwork = np.artwork {
-                    Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    ZStack {
-                        Rectangle().fill(scheme.tileFill)
-                        Image(systemName: "music.note").font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+        VStack(spacing: 7) {
+            Button {
+                np.openPlayer()
+            } label: {
+                HStack(spacing: 9) {
+                    Group {
+                        if let artwork = np.artwork {
+                            Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            ZStack {
+                                Rectangle().fill(scheme.tileFill)
+                                Image(systemName: "music.note").font(.system(size: 15))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .frame(width: 46, height: 46)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Marquee(text: np.title)
+                        if !np.artist.isEmpty {
+                            Text(np.artist)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(np.bundleIdentifier == nil ? "" : "Open the player")
+
+            if np.duration > 0 {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let position = np.position(at: context.date)
+                    VStack(spacing: 2) {
+                        GeometryReader { geo in
+                            let fraction = min(max(position / np.duration, 0), 1)
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(scheme.hairline).frame(height: 3)
+                                Capsule().fill(Color.accentColor)
+                                    .frame(width: geo.size.width * fraction, height: 3)
+                            }
+                            .frame(height: geo.size.height, alignment: .center)
+                        }
+                        .frame(height: 3)
+
+                        HStack {
+                            Text(clock(position))
+                            Spacer()
+                            Text("-" + clock(np.duration - position))
+                        }
+                        .font(.system(size: 9.5).monospacedDigit())
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
-            .frame(width: 36, height: 36)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(np.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                if !np.artist.isEmpty {
-                    Text(np.artist).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-            Spacer(minLength: 0)
         }
+    }
+
+    private func clock(_ seconds: Double) -> String {
+        let total = Int(max(seconds, 0).rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     private var footer: some View {
