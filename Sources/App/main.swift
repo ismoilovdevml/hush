@@ -19,26 +19,34 @@ final class PanelWindow: NSPanel {
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let blur = NSVisualEffectView()
-        blur.material = .popover
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = 16
-        blur.layer?.cornerCurve = .continuous
-        blur.layer?.masksToBounds = true
-        blur.layer?.borderWidth = 0.5
-        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        // Liquid Glass elements sample the desktop directly, so the window paints nothing
+        // of its own. Before macOS 26 there is no glass, so the old blurred panel stands in.
+        let container: NSView
+        if liquidGlassAvailable {
+            container = NSView()
+            container.wantsLayer = true
+            hasShadow = false
+        } else {
+            let blur = NSVisualEffectView()
+            blur.material = .popover
+            blur.blendingMode = .behindWindow
+            blur.state = .active
+            blur.wantsLayer = true
+            blur.layer?.cornerRadius = 16
+            blur.layer?.cornerCurve = .continuous
+            blur.layer?.masksToBounds = true
+            container = blur
+        }
 
         content.translatesAutoresizingMaskIntoConstraints = false
-        blur.addSubview(content)
+        container.addSubview(content)
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: blur.topAnchor),
-            content.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
-        contentView = blur
+        contentView = container
     }
 
     /// Place the panel under the menu bar, centred on `anchor`, fully inside visibleFrame.
@@ -69,6 +77,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hp = Headphones(address: found?.address ?? "58-18-62-38-6F-EC")
         if let n = found?.name { hp.name = n }
         pinned = ProcessInfo.processInfo.environment["HUSH_PIN"] == "1"
+        // HUSH_APPEARANCE=light|dark forces one appearance, for checking both without
+        // switching the whole system.
+        switch ProcessInfo.processInfo.environment["HUSH_APPEARANCE"] {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: break
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let b = statusItem.button {
