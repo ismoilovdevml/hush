@@ -16,11 +16,11 @@ private struct Card<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) {
-            content
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        content
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
+                .fill(scheme.cardFill))
     }
 }
 
@@ -292,21 +292,23 @@ struct PanelView: View {
     @ObservedObject var appearance: AppearanceWatcher
 
     var body: some View {
-        VStack(spacing: 8) {
-            header
+        GlassBox(cornerRadius: 18, fallbackFill: scheme.cardFill) {
+            VStack(spacing: 8) {
+                Card { headerBody }
 
-            if hp.connected {
-                ancCard
-                mediaCard
-                soundCard
-            } else {
-                // Nothing on the headphones can be read or changed while they are away, so
-                // the panel drops those controls instead of showing a wall of dead ones.
-                connectRow
-                mediaCard
+                if hp.connected {
+                    ancCard
+                    mediaCard
+                    equalizerCard
+                    dseeCard
+                } else {
+                    connectRow
+                    mediaCard
+                }
+
+                footer
             }
-
-            footer
+            .padding(10)
         }
         .padding(10)
         .frame(width: 320)
@@ -315,10 +317,6 @@ struct PanelView: View {
         .animation(.easeInOut(duration: 0.18), value: hp.eqIsManual)
         .onAppear { hp.refresh() }
         .id(appearance.tick)
-    }
-
-    private var header: some View {
-        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) { headerBody }
     }
 
     private var headerBody: some View {
@@ -344,8 +342,6 @@ struct PanelView: View {
                 .background(Capsule().fill(scheme.tileFill))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
     }
 
     private var connectRow: some View {
@@ -429,9 +425,7 @@ struct PanelView: View {
         }
     }
 
-    /// Equalizer and DSEE are both "how it sounds", so they share one card rather than
-    /// spending a card gap and a second set of insets on two single-line settings.
-    private var soundCard: some View {
+    private var equalizerCard: some View {
         Card {
             VStack(spacing: 0) {
                 HStack {
@@ -449,7 +443,7 @@ struct PanelView: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                 }
-                .frame(height: 22)
+                .frame(height: 20)
 
                 if hp.eqIsManual {
                     HStack(alignment: .bottom, spacing: 1) {
@@ -460,16 +454,18 @@ struct PanelView: View {
                                    onCommit: { hp.pushEQBands() })
                         }
                     }
-                    .padding(.top, 2)
+                    .padding(.top, 4)
                     .transition(.opacity)
                 }
-
-                Divider().padding(.vertical, 7)
-
-                SettingRow(title: "DSEE Extreme",
-                           subtitle: "Upscale compressed audio",
-                           isOn: Binding(get: { hp.dsee }, set: { hp.setDSEE($0) }))
             }
+        }
+    }
+
+    private var dseeCard: some View {
+        Card {
+            SettingRow(title: "DSEE Extreme",
+                       subtitle: "Upscale compressed audio",
+                       isOn: Binding(get: { hp.dsee }, set: { hp.setDSEE($0) }))
         }
     }
 
@@ -544,10 +540,6 @@ struct PanelView: View {
     }
 
     private var footer: some View {
-        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) { footerBody }
-    }
-
-    private var footerBody: some View {
         HStack(spacing: 6) {
             Circle().frame(width: 6, height: 6)
                 .foregroundStyle(hp.connected ? Color.green : Color.secondary)
@@ -563,8 +555,6 @@ struct PanelView: View {
                 Image(systemName: "power").font(.system(size: 10))
             }.buttonStyle(.plain).foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
     }
 
     /// Transport rides the adapter; synthetic media keys are only the fallback.
