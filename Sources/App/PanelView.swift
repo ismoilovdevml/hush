@@ -112,14 +112,39 @@ struct PanelView: View {
         VStack(spacing: 10) {
             header
 
+            if !hp.connected {
+                Button {
+                    NSWorkspace.shared.open(
+                        URL(string: "x-apple.systempreferences:com.apple.Bluetooth")!)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                            .font(.system(size: 11))
+                        Text("Connect \(hp.name) in Bluetooth settings")
+                            .font(.system(size: 11))
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.system(size: 9))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity)
+                    .background(.quaternary.opacity(0.45),
+                                in: RoundedRectangle(cornerRadius: cardRadius, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+
             Card {
                 VStack(spacing: 10) {
                     HStack(spacing: 7) {
                         ForEach(Headphones.ANC.allCases) { mode in
-                            ANCTile(mode: mode, selected: hp.anc == mode) { hp.setANC(mode) }
+                            ANCTile(mode: mode, selected: hp.connected && hp.anc == mode) {
+                                hp.setANC(mode)
+                            }
                         }
                     }
-                    if hp.anc == .ambient {
+                    if hp.anc == .ambient, hp.connected {
                         VStack(spacing: 6) {
                             HStack(spacing: 8) {
                                 Image(systemName: "speaker.wave.1").font(.system(size: 10))
@@ -141,6 +166,8 @@ struct PanelView: View {
                     }
                 }
             }
+            .disabled(!hp.connected)
+            .opacity(hp.connected ? 1 : 0.4)
 
             Card {
                 VStack(spacing: 10) {
@@ -204,23 +231,33 @@ struct PanelView: View {
                     }
                 }
             }
+            .disabled(!hp.connected)
+            .opacity(hp.connected ? 1 : 0.4)
 
             Card {
-                Toggle(isOn: Binding(get: { hp.dsee }, set: { hp.setDSEE($0) })) {
-                    VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("DSEE Extreme").font(.system(size: 12, weight: .medium))
-                        Text("Upscale compressed audio").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text("Upscale compressed audio")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                     }
+                    Spacer(minLength: 12)
+                    Toggle("", isOn: Binding(get: { hp.dsee }, set: { hp.setDSEE($0) }))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 5 }
                 }
-                .toggleStyle(.switch)
-                .controlSize(.small)
             }
+            .disabled(!hp.connected)
+            .opacity(hp.connected ? 1 : 0.4)
 
             footer
         }
         .padding(12)
         .frame(width: 320)
         .animation(.easeInOut(duration: 0.18), value: hp.anc)
+        .animation(.easeInOut(duration: 0.2), value: hp.connected)
         .animation(.easeInOut(duration: 0.18), value: hp.eqIsManual)
         .onAppear { hp.refresh() }
     }
@@ -277,7 +314,7 @@ struct PanelView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if let b = hp.battery {
+            if hp.connected, let b = hp.battery {
                 HStack(spacing: 4) {
                     Image(systemName: hp.charging ? "battery.100.bolt" : batterySymbol(b))
                         .font(.system(size: 11))
@@ -294,8 +331,10 @@ struct PanelView: View {
         HStack(spacing: 6) {
             Circle().frame(width: 6, height: 6)
                 .foregroundStyle(hp.connected ? Color.green : Color.secondary)
-            Text(hp.connected ? "Firmware \(hp.firmware)" : "Headphones offline")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+            if hp.connected {
+                Text("Firmware \(hp.firmware)")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
             Spacer()
             Button { hp.refresh() } label: {
                 Image(systemName: "arrow.clockwise").font(.system(size: 10))

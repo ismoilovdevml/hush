@@ -71,12 +71,18 @@ final class Headphones: ObservableObject {
     @Published var busy = false
 
     private let link: SonyLink
+    private let address: String
     private var poll: Timer?
 
     init(address: String) {
+        self.address = address
         link = SonyLink(address: address)
         link.onState = { [weak self] s in
-            Task { @MainActor in self?.connected = (s == .online) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.connected = (s == .online)
+                if !self.connected { self.battery = nil; self.charging = false }
+            }
         }
         link.onNotify = { [weak self] f in
             Task { @MainActor in self?.apply(f) }
@@ -94,7 +100,15 @@ final class Headphones: ObservableObject {
     // MARK: reads
 
     func refresh(completion: (() -> Void)? = nil) {
-        guard link.connect() else { connected = false; completion?(); return }
+        guard link.connect() else {
+            connected = false
+            battery = nil
+            charging = false
+            codec = "—"
+            firmware = "—"
+            completion?()
+            return
+        }
         connected = true
         volume = SystemVolume.get()
         mediaKeysAllowed = MediaKeyAuth.trusted
@@ -102,7 +116,11 @@ final class Headphones: ObservableObject {
         link.request(Sony.cmd1, [0x04, 0x02], expect: 0x05) { [weak self] f in
             guard let f, f.payload.count > 3 else { return }
             let s = String(decoding: f.payload.dropFirst(3), as: UTF8.self)
-            Task { @MainActor in self?.firmware = s }
+            Task { @MainActor in
+                self?.firmware = s
+                // it answered the Sony protocol, so it is the one worth coming back to
+                if let address = self?.address { rememberHeadset(address: address) }
+            }
         }
         link.request(Sony.cmd1, [0x22, 0x00], expect: 0x23) { [weak self] f in
             guard let f, f.payload.count >= 4 else { return }

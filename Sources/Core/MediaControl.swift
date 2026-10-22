@@ -40,7 +40,7 @@ enum MediaKey: Int32 {
 /// Bluetooth outputs usually expose no "main" volume element, only the stereo channels,
 /// so both cases are handled.
 enum SystemVolume {
-    private static func address(_ selector: AudioObjectPropertySelector,
+    static func address(_ selector: AudioObjectPropertySelector,
                                 _ element: AudioObjectPropertyElement) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress(mSelector: selector,
                                    mScope: kAudioDevicePropertyScopeOutput,
@@ -58,7 +58,7 @@ enum SystemVolume {
     }
 
     /// Which elements actually carry a settable scalar volume on this device.
-    private static func elements(of dev: AudioDeviceID) -> [AudioObjectPropertyElement] {
+    static func elements(of dev: AudioDeviceID) -> [AudioObjectPropertyElement] {
         var main = address(kAudioDevicePropertyVolumeScalar, kAudioObjectPropertyElementMain)
         if AudioObjectHasProperty(dev, &main) { return [kAudioObjectPropertyElementMain] }
 
@@ -98,17 +98,54 @@ enum SystemVolume {
 
     /// Fires when the volume is changed anywhere else (media keys, Control Center, another app).
     static func observe(_ changed: @escaping () -> Void) {
-        let listener: AudioObjectPropertyListenerBlock = { _, _ in changed() }
-        if let dev = defaultOutputDevice() {
-            for el in elements(of: dev) {
-                var addr = address(kAudioDevicePropertyVolumeScalar, el)
-                _ = AudioObjectAddPropertyListenerBlock(dev, &addr, DispatchQueue.main, listener)
+        observer = VolumeObserver(onChange: changed)
+    }
+
+    private static var observer: VolumeObserver?
+}
+
+/// Keeps a volume listener on whichever device is the default output *right now*.
+///
+/// Registering once at launch is not enough: unplugging the headphones makes a different
+/// device the default, and a listener registered on the old device hears nothing about the
+/// new one. That is why the slider stopped following the keyboard after a disconnect.
+private final class VolumeObserver {
+    private var device: AudioDeviceID?
+    private var elements: [AudioObjectPropertyElement] = []
+    private let onChange: () -> Void
+    private lazy var volumeChanged: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+        self?.onChange()
+    }
+
+    init(onChange: @escaping () -> Void) {
+        self.onChange = onChange
+
+        var deviceAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        _ = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject), &deviceAddress, DispatchQueue.main
+        ) { [weak self] _, _ in
+            self?.rebind()
+            self?.onChange()
+        }
+        rebind()
+    }
+
+    private func rebind() {
+        if let old = device {
+            for element in elements {
+                var addr = SystemVolume.address(kAudioDevicePropertyVolumeScalar, element)
+                _ = AudioObjectRemovePropertyListenerBlock(old, &addr, DispatchQueue.main, volumeChanged)
             }
         }
-        var devAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-                                                 mScope: kAudioObjectPropertyScopeGlobal,
-                                                 mElement: kAudioObjectPropertyElementMain)
-        _ = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject),
-                                                &devAddr, DispatchQueue.main, listener)
+        device = SystemVolume.defaultOutputDevice()
+        elements = device.map { SystemVolume.elements(of: $0) } ?? []
+        guard let device else { return }
+        for element in elements {
+            var addr = SystemVolume.address(kAudioDevicePropertyVolumeScalar, element)
+            _ = AudioObjectAddPropertyListenerBlock(device, &addr, DispatchQueue.main, volumeChanged)
+        }
     }
 }
