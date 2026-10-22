@@ -16,10 +16,11 @@ private struct Card<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glass(cornerRadius: cardRadius, fallback: scheme.cardFill)
+        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) {
+            content
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -64,9 +65,12 @@ private struct ANCTile: View {
                 .foregroundStyle(.white)
                 .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.accentColor))
         } else {
+            // A plain fill, not nested glass: glass inside glass composites into a flat dark
+            // block, and Control Center does not nest it either.
             content
                 .foregroundStyle(.primary)
-                .glass(cornerRadius: 11, fallback: scheme.tileFill)
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(scheme.tileFill))
         }
     }
 }
@@ -110,6 +114,57 @@ private struct TransportButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// A slider drawn by hand.
+///
+/// The system one greys out whenever the app is not frontmost - taking a screenshot is
+/// enough - so the fill stopped looking like a control. SwiftUI in this SDK exposes no way
+/// to override that (there is no controlActiveState), and Control Center's own sliders keep
+/// their fill regardless, so this draws its own.
+private struct PanelSlider: View {
+    @Environment(\.colorScheme) private var scheme
+    @Binding var value: Double
+    var range: ClosedRange<Double> = 0...100
+    var step: Double?
+    var onCommit: (() -> Void)?
+
+    private let height: CGFloat = 6
+    private let knob: CGFloat = 15
+
+    var body: some View {
+        GeometryReader { geo in
+            let span = range.upperBound - range.lowerBound
+            let fraction = span > 0 ? (value - range.lowerBound) / span : 0
+            let travel = geo.size.width - knob
+            let x = knob / 2 + travel * fraction
+
+            ZStack(alignment: .leading) {
+                Capsule().fill(scheme.hairline)
+                    .frame(height: height)
+                Capsule().fill(Color.accentColor)
+                    .frame(width: max(x, height), height: height)
+                Circle().fill(.white)
+                    .frame(width: knob, height: knob)
+                    .shadow(color: .black.opacity(0.25), radius: 1.5, y: 0.5)
+                    .offset(x: x - knob / 2)
+            }
+            .frame(height: geo.size.height, alignment: .center)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        let raw = range.lowerBound
+                            + Double((drag.location.x - knob / 2) / max(travel, 1)) * span
+                        var next = min(max(raw, range.lowerBound), range.upperBound)
+                        if let step { next = (next / step).rounded() * step }
+                        if next != value { value = next }
+                    }
+                    .onEnded { _ in onCommit?() }
+            )
+        }
+        .frame(height: knob)
     }
 }
 
@@ -188,6 +243,10 @@ struct PanelView: View {
     }
 
     private var header: some View {
+        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) { headerBody }
+    }
+
+    private var headerBody: some View {
         HStack(spacing: 9) {
             Image(systemName: "headphones")
                 .font(.system(size: 17, weight: .medium))
@@ -212,7 +271,6 @@ struct PanelView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .glass(cornerRadius: cardRadius, fallback: scheme.cardFill)
     }
 
     private var connectRow: some View {
@@ -229,9 +287,9 @@ struct PanelView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity)
-            .glass(cornerRadius: cardRadius, fallback: scheme.cardFill)
         }
         .buttonStyle(.plain)
+        .background { GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) { Color.clear } }
     }
 
     private var ancCard: some View {
@@ -247,9 +305,8 @@ struct PanelView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "speaker.wave.1").font(.system(size: 10))
                                 .foregroundStyle(.secondary)
-                            Slider(value: $hp.ambientLevel, in: 0...20, step: 1) { editing in
-                                if !editing { hp.pushANC() }
-                            }
+                            PanelSlider(value: $hp.ambientLevel, range: 0...20, step: 1,
+                                        onCommit: { hp.pushANC() })
                             Image(systemName: "speaker.wave.3").font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
@@ -290,7 +347,7 @@ struct PanelView: View {
                 }
                 HStack(spacing: 8) {
                     Image(systemName: "speaker.fill").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Slider(value: Binding(get: { hp.volume }, set: { hp.setVolume($0) }), in: 0...100)
+                    PanelSlider(value: Binding(get: { hp.volume }, set: { hp.setVolume($0) }))
                     Image(systemName: "speaker.wave.3.fill").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
@@ -368,6 +425,10 @@ struct PanelView: View {
     }
 
     private var footer: some View {
+        GlassBox(cornerRadius: cardRadius, fallbackFill: scheme.cardFill) { footerBody }
+    }
+
+    private var footerBody: some View {
         HStack(spacing: 6) {
             Circle().frame(width: 6, height: 6)
                 .foregroundStyle(hp.connected ? Color.green : Color.secondary)
@@ -385,7 +446,6 @@ struct PanelView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .glass(cornerRadius: cardRadius, fallback: scheme.cardFill)
     }
 
     /// Transport rides the adapter; synthetic media keys are only the fallback.

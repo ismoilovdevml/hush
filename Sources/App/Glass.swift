@@ -1,36 +1,87 @@
-// Liquid Glass backgrounds.
+// Liquid Glass containers.
 //
 // SwiftUI in this SDK ships only the glass *button* styles — there is no `glassEffect`
-// modifier — but AppKit's NSGlassEffectView is there from macOS 26, so the real effect is
-// reachable by wrapping it. On anything older this falls back to the previous flat fill, so
-// the panel still looks deliberate rather than broken.
+// modifier — but AppKit's NSGlassEffectView is there from macOS 26.
+//
+// The content has to be the glass view's `contentView`, not a sibling drawn over it. The
+// header says so plainly: "NSGlassEffectView only guarantees the contentView will be placed
+// inside the glass effect; arbitrary subviews aren't guaranteed specific behavior with
+// regard to z-order". Using the effect as a plain `.background` breaks that rule, and
+// anything opaque on top — a filled tile, album artwork — tore black bars through the pill.
 import SwiftUI
 
-struct GlassBackground: NSViewRepresentable {
+struct GlassBox<Content: View>: NSViewRepresentable {
     var cornerRadius: CGFloat = 13
     var tint: NSColor?
-    /// Control Center's own pills are `.clear`: the desktop reads straight through them and
-    /// only a rim light and a faint tint remain.
-    ///
-    /// In light appearance that is not safe. The pill shows whatever is behind the *window*,
-    /// so a light panel over a dark window ends up with dark text on dark glass - measured,
-    /// the status line was almost unreadable. There the denser `.regular` keeps the surface
-    /// light enough for dark text, so the style follows the appearance.
+    /// Drawn when the system is older than macOS 26 and there is no glass to be had.
+    var fallbackFill: Color = .clear
+    @ViewBuilder var content: () -> Content
+
+    /// Control Center's pills are clear glass. In light appearance that is not safe: the pill
+    /// shows whatever is behind the *window*, so a light panel over a dark window ends up with
+    /// dark text on dark glass. The denser style keeps light appearance readable.
     @Environment(\.colorScheme) private var scheme
 
+    final class Coordinator {
+        var host: NSHostingView<AnyView>?
+        /// A detached copy used only to measure. Resizing the live hosting view from inside
+        /// sizeThatFits runs inside SwiftUI's own layout pass and aborts the process with an
+        /// AttributeGraph precondition failure.
+        var ruler: NSHostingView<AnyView>?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// The content lives in its own hosting view, which starts with a fresh SwiftUI
+    /// environment — nothing is inherited from the view that placed this box. The appearance
+    /// has to be handed over explicitly, or nested fills resolve against the wrong scheme and
+    /// come out darker than the pill they sit on.
+    private func wrapped() -> AnyView {
+        AnyView(content().environment(\.colorScheme, scheme))
+    }
+
     func makeNSView(context: Context) -> NSView {
-        guard #available(macOS 26.0, *) else { return NSView() }
-        let view = NSGlassEffectView()
-        // Without a contentView the effect renders inconsistently between instances;
-        // an empty one is enough to make every pill sample the same way.
-        view.contentView = NSView()
-        apply(to: view)
-        return view
+        let host = NSHostingView(rootView: wrapped())
+        host.sizingOptions = [.intrinsicContentSize]
+        context.coordinator.host = host
+
+        guard #available(macOS 26.0, *) else {
+            host.wantsLayer = true
+            host.layer?.cornerRadius = cornerRadius
+            host.layer?.cornerCurve = .continuous
+            host.layer?.backgroundColor = NSColor(fallbackFill).cgColor
+            return host
+        }
+
+        let glass = NSGlassEffectView()
+        glass.contentView = host
+        apply(to: glass)
+        return glass
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard #available(macOS 26.0, *), let view = nsView as? NSGlassEffectView else { return }
-        apply(to: view)
+        context.coordinator.host?.rootView = wrapped()
+        if #available(macOS 26.0, *), let glass = nsView as? NSGlassEffectView {
+            apply(to: glass)
+        } else {
+            nsView.layer?.cornerRadius = cornerRadius
+            nsView.layer?.backgroundColor = NSColor(fallbackFill).cgColor
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        let ruler: NSHostingView<AnyView>
+        if let existing = context.coordinator.ruler {
+            ruler = existing
+            ruler.rootView = wrapped()
+        } else {
+            ruler = NSHostingView(rootView: wrapped())
+            ruler.sizingOptions = [.intrinsicContentSize]
+            context.coordinator.ruler = ruler
+        }
+        let width = proposal.width ?? ruler.intrinsicContentSize.width
+        ruler.setFrameSize(NSSize(width: width, height: 0))
+        return CGSize(width: width, height: ruler.fittingSize.height)
     }
 
     @available(macOS 26.0, *)
@@ -38,18 +89,6 @@ struct GlassBackground: NSViewRepresentable {
         view.cornerRadius = cornerRadius
         view.tintColor = tint
         view.style = scheme == .dark ? .clear : .regular
-    }
-}
-
-extension View {
-    /// Glass where the system can draw it, the old translucent fill where it cannot.
-    @ViewBuilder
-    func glass(cornerRadius: CGFloat = 13, tint: NSColor? = nil, fallback: Color) -> some View {
-        if #available(macOS 26.0, *) {
-            background(GlassBackground(cornerRadius: cornerRadius, tint: tint))
-        } else {
-            background(fallback, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        }
     }
 }
 
