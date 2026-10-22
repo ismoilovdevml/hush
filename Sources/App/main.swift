@@ -13,6 +13,13 @@ final class PanelWindow: NSPanel {
                    backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
+        // Control Center keeps white labels whatever the system appearance, because clear
+        // glass shows whatever is behind the window - a light-appearance panel over a dark
+        // window leaves dark text on dark glass. Pin the panel to the dark appearance for
+        // the same reason, unless HUSH_APPEARANCE asks otherwise.
+        if ProcessInfo.processInfo.environment["HUSH_APPEARANCE"] == nil {
+            appearance = NSAppearance(named: .darkAqua)
+        }
         hasShadow = true
         level = .statusBar
         isMovable = false

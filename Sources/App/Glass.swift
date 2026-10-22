@@ -9,8 +9,10 @@ import SwiftUI
 struct GlassBackground: NSViewRepresentable {
     var cornerRadius: CGFloat = 13
     var tint: NSColor?
-    /// `.clear` lets much more of the desktop through; used for the large grouping surfaces.
-    var clear = false
+    /// Control Center's own pills are `.clear`: the desktop reads straight through them and
+    /// only a rim light and a faint tint remain. `.regular` is far more opaque and reads as a
+    /// solid block next to the real thing.
+    var clear = true
 
     func makeNSView(context: Context) -> NSView {
         guard #available(macOS 26.0, *) else { return NSView() }
@@ -38,7 +40,7 @@ struct GlassBackground: NSViewRepresentable {
 extension View {
     /// Glass where the system can draw it, the old translucent fill where it cannot.
     @ViewBuilder
-    func glass(cornerRadius: CGFloat = 13, tint: NSColor? = nil, clear: Bool = false,
+    func glass(cornerRadius: CGFloat = 13, tint: NSColor? = nil, clear: Bool = true,
                fallback: Color) -> some View {
         if #available(macOS 26.0, *) {
             background(GlassBackground(cornerRadius: cornerRadius, tint: tint, clear: clear))
