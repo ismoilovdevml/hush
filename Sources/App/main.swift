@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: PanelWindow!
     private var hp: Headphones!
     private var np: NowPlaying!
+    private let appearance = AppearanceWatcher()
     private var outsideClick: Any?
     private var escKey: Any?
     private var pinned = false
@@ -102,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { service.execute(request, reply: respond) }
         }
 
-        let host = NSHostingView(rootView: PanelView(hp: hp, np: np))
+        let host = NSHostingView(rootView: PanelView(hp: hp, np: np, appearance: appearance))
         panel = PanelWindow(content: host)
 
         // Closing on focus loss is the reliable path: a global mouse monitor alone needs

@@ -289,6 +289,7 @@ struct PanelView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var hp: Headphones
     @ObservedObject var np: NowPlaying
+    @ObservedObject var appearance: AppearanceWatcher
 
     var body: some View {
         VStack(spacing: 8) {
@@ -313,6 +314,7 @@ struct PanelView: View {
         .animation(.easeInOut(duration: 0.2), value: hp.connected)
         .animation(.easeInOut(duration: 0.18), value: hp.eqIsManual)
         .onAppear { hp.refresh() }
+        .id(appearance.tick)
     }
 
     private var header: some View {

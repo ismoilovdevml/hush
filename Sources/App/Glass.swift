@@ -110,3 +110,24 @@ var liquidGlassAvailable: Bool {
     if #available(macOS 26.0, *) { return true }
     return false
 }
+
+
+/// Watches for the system switching between light and dark.
+///
+/// Each glass pill keeps its own hosting view, and SwiftUI does not necessarily re-evaluate
+/// every one of them when the appearance changes — so some pills kept the old look while
+/// their neighbours switched, leaving a dark footer under a light panel. Bumping this tick
+/// changes the panel's identity and rebuilds all of them together.
+@MainActor
+final class AppearanceWatcher: ObservableObject {
+    @Published private(set) var tick = 0
+
+    init() {
+        DistributedNotificationCenter.default.addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick += 1 }
+        }
+    }
+}
