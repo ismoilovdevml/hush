@@ -7,6 +7,21 @@ import IOBluetooth
 final class PanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
 
+    private var blur: NSView?
+
+    func install(_ content: NSView) {
+        guard let container = contentView else { return }
+        container.subviews.forEach { $0.removeFromSuperview() }
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+    }
+
     init(content: NSView) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
                    styleMask: [.borderless, .nonactivatingPanel],
@@ -103,8 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { service.execute(request, reply: respond) }
         }
 
-        let host = NSHostingView(rootView: PanelView(hp: hp, np: np, appearance: appearance))
-        panel = PanelWindow(content: host)
+        panel = PanelWindow(content: NSView())
 
         // Closing on focus loss is the reliable path: a global mouse monitor alone needs
         // Accessibility trust and silently does nothing without it.
@@ -122,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func show() {
+        panel.install(NSHostingView(rootView: PanelView(hp: hp, np: np, appearance: appearance)))
         hp.refresh()
         guard let b = statusItem.button, let w = b.window,
               let screen = w.screen ?? NSScreen.main else { return }
@@ -152,6 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let m = outsideClick { NSEvent.removeMonitor(m); outsideClick = nil }
         if let m = escKey { NSEvent.removeMonitor(m); escKey = nil }
         panel.orderOut(nil)
+        // Nothing to animate once it is closed.
+        panel.install(NSView())
         statusItem.button?.highlight(false)
     }
 }

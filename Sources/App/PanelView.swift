@@ -123,70 +123,93 @@ private struct TransportButton: View {
 /// heights are invented. They move while playing and rest when paused.
 private struct PlayingBars: View {
     let playing: Bool
-    @State private var tall = false
 
-    private let bars: [(low: CGFloat, high: CGFloat, beat: Double)] = [
-        (3, 10, 0.42), (6, 13, 0.33), (4, 9, 0.52), (7, 12, 0.38),
+    // low, high, and how fast this bar breathes
+    private let bars: [(low: CGFloat, high: CGFloat, rate: Double)] = [
+        (3, 10, 2.3), (6, 13, 3.1), (4, 9, 1.8), (7, 12, 2.7),
     ]
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(Array(bars.enumerated()), id: \.offset) { index, bar in
-                Capsule()
-                    .fill(.secondary)
-                    .frame(width: 2, height: playing ? (tall ? bar.high : bar.low) : 3)
-                    .animation(playing
-                               ? .easeInOut(duration: bar.beat).repeatForever(autoreverses: true)
-                               : .easeOut(duration: 0.2),
-                               value: tall)
-                    .animation(.easeOut(duration: 0.2), value: playing)
+        // Ten frames a second, not the display's hundred and twenty. A SwiftUI
+        // repeatForever animation redraws at the refresh rate, and because these sit inside a
+        // glass pill every one of those frames re-composites the whole pill — measured at 54%
+        // CPU for four moving capsules. At this rate it is a rounding error, and an indicator
+        // does not need to be smoother than this.
+        TimelineView(.periodic(from: .now, by: 0.08)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(Array(bars.enumerated()), id: \.offset) { index, bar in
+                    Capsule()
+                        .fill(.secondary)
+                        .frame(width: 2, height: height(of: bar, at: time, index: index))
+                }
             }
+            .frame(height: 13, alignment: .bottom)
         }
-        .frame(height: 13, alignment: .bottom)
-        .onAppear { tall = true }
+    }
+
+    private func height(of bar: (low: CGFloat, high: CGFloat, rate: Double),
+                        at time: Double, index: Int) -> CGFloat {
+        guard playing else { return 3 }
+        let wave = (sin(time * bar.rate + Double(index)) + 1) / 2
+        return bar.low + (bar.high - bar.low) * CGFloat(wave)
     }
 }
 
 /// Scrolls its text when it does not fit, and sits still when it does.
+///
+/// Driven from a clock rather than a repeating SwiftUI animation for the same reason as the
+/// bars: anything that redraws at the display's refresh rate inside a glass pill re-composites
+/// the whole pill every frame, which measured at better than half a core.
 private struct Marquee: View {
     let text: String
     var font: Font = .system(size: 12, weight: .medium)
 
     @State private var textWidth: CGFloat = 0
-    @State private var boxWidth: CGFloat = 0
-    @State private var shift: CGFloat = 0
 
-    private var overflow: CGFloat { max(textWidth - boxWidth, 0) }
+    private let speed: Double = 22      // points per second
+    private let pause: Double = 1.6     // seconds held at each end
 
     var body: some View {
         GeometryReader { geo in
-            Text(text)
-                .font(font)
-                .lineLimit(1)
-                .fixedSize()
-                .background(GeometryReader { inner in
-                    Color.clear.onAppear { textWidth = inner.size.width }
-                        .onChange(of: text) { _ in textWidth = inner.size.width }
-                })
-                .offset(x: shift)
-                .frame(width: geo.size.width, alignment: .leading)
-                .clipped()
-                .onAppear { boxWidth = geo.size.width; restart() }
-                .onChange(of: text) { _ in restart() }
-                .onChange(of: overflow) { _ in restart() }
+            let overflow = max(textWidth - geo.size.width, 0)
+            Group {
+                if overflow > 1 {
+                    TimelineView(.periodic(from: .now, by: 1.0 / 20)) { context in
+                        label.offset(x: -offset(for: overflow, at: context.date))
+                    }
+                } else {
+                    label
+                }
+            }
+            .frame(width: geo.size.width, alignment: .leading)
+            .clipped()
         }
         .frame(height: 15)
     }
 
-    private func restart() {
-        shift = 0
-        guard overflow > 1 else { return }
-        // out and back, with a pause at each end, rather than a loop that snaps
-        withAnimation(.linear(duration: Double(overflow) / 22)
-            .delay(1.6)
-            .repeatForever(autoreverses: true)) {
-            shift = -overflow
-        }
+    private var label: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize()
+            .background(GeometryReader { inner in
+                Color.clear.onAppear { textWidth = inner.size.width }
+                    .onChange(of: text) { _ in textWidth = inner.size.width }
+            })
+    }
+
+    /// Out, hold, back, hold — then repeat.
+    private func offset(for overflow: CGFloat, at date: Date) -> CGFloat {
+        let travel = Double(overflow) / speed
+        let cycle = (travel + pause) * 2
+        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+
+        if t < travel { return overflow * CGFloat(t / travel) }
+        if t < travel + pause { return overflow }
+        let back = t - travel - pause
+        if back < travel { return overflow * CGFloat(1 - back / travel) }
+        return 0
     }
 }
 

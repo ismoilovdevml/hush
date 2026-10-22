@@ -33,6 +33,11 @@ struct GlassBox<Content: View>: NSViewRepresentable {
 
     final class Coordinator {
         var host: NSHostingView<SchemeWrapped<Content>>?
+        /// Measuring runs a whole extra layout pass. Heights only change when the panel's
+        /// structure does, not when a bar wiggles, so the last answer is reused for a moment.
+        var lastWidth: CGFloat = -1
+        var lastHeight: CGFloat = 0
+        var measuredAt = Date.distantPast
         /// A detached copy used only to measure. Resizing the live hosting view from inside
         /// sizeThatFits runs inside SwiftUI's own layout pass and aborts the process with an
         /// AttributeGraph precondition failure.
@@ -79,6 +84,12 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        let c = context.coordinator
+        if let width = proposal.width, width == c.lastWidth,
+           Date().timeIntervalSince(c.measuredAt) < 0.4 {
+            return CGSize(width: width, height: c.lastHeight)
+        }
+
         let ruler: NSHostingView<SchemeWrapped<Content>>
         if let existing = context.coordinator.ruler {
             ruler = existing
@@ -90,7 +101,11 @@ struct GlassBox<Content: View>: NSViewRepresentable {
         }
         let width = proposal.width ?? ruler.intrinsicContentSize.width
         ruler.setFrameSize(NSSize(width: width, height: 0))
-        return CGSize(width: width, height: ruler.fittingSize.height)
+        let height = ruler.fittingSize.height
+        c.lastWidth = width
+        c.lastHeight = height
+        c.measuredAt = Date()
+        return CGSize(width: width, height: height)
     }
 
     @available(macOS 26.0, *)
