@@ -7,8 +7,8 @@
 <circle cx="56" cy="19" r="5.5" fill="#28c840"/>
 <text x="380" y="23" fill="#8b949e" font-size="11.5" text-anchor="middle">hush — zsh</text>
 <text x="22" y="73.0"><tspan fill="#3fb950">$</tspan><tspan fill="#e6edf3" xml:space="preserve"> hush</tspan></text>
-<text x="22" y="93.5" xml:space="preserve" fill="#79c0ff">WH-1000XM6  70%  AAC  fw 3.1.5</text>
-<text x="22" y="114.0" xml:space="preserve" fill="#c9d1d9">  anc       Ambient Sound  level 12  focus on voice</text>
+<text x="22" y="93.5" xml:space="preserve" fill="#79c0ff">WH-1000XM6  66%  AAC  fw 3.1.5</text>
+<text x="22" y="114.0" xml:space="preserve" fill="#c9d1d9">  anc       Noise Cancelling</text>
 <text x="22" y="134.5" xml:space="preserve" fill="#c9d1d9">  dsee      off</text>
 <text x="22" y="155.0" xml:space="preserve" fill="#c9d1d9">  volume    44%</text>
 <text x="22" y="175.5" xml:space="preserve" fill="#c9d1d9">  eq        Manual</text>
@@ -22,9 +22,9 @@
 <text x="22" y="339.5" xml:space="preserve"><tspan fill="#c9d1d9">    4k    +2  </tspan><tspan fill="#58a6ff">##</tspan></text>
 <text x="22" y="360.0" xml:space="preserve"><tspan fill="#c9d1d9">    8k    +4  </tspan><tspan fill="#58a6ff">####</tspan></text>
 <text x="22" y="380.5" xml:space="preserve"><tspan fill="#c9d1d9">    16k   +5  </tspan><tspan fill="#58a6ff">#####</tspan></text>
-<text x="22" y="401.0" xml:space="preserve" fill="#c9d1d9">  playing   ▶ Gigi Perez - Sailor Song (Official Music Video)</text>
+<text x="22" y="401.0" xml:space="preserve" fill="#c9d1d9">  playing   ▶ Coldplay - Yellow (Official Video)</text>
 <text x="22" y="442.0"><tspan fill="#3fb950">$</tspan><tspan fill="#e6edf3" xml:space="preserve"> hush anc ambient --level 12 --focus</tspan></text>
-<text x="22" y="462.5" xml:space="preserve" fill="#79c0ff">WH-1000XM6  70%  AAC  fw 3.1.5</text>
+<text x="22" y="462.5" xml:space="preserve" fill="#79c0ff">WH-1000XM6  66%  AAC  fw 3.1.5</text>
 <text x="22" y="483.0" xml:space="preserve" fill="#c9d1d9">  anc       Ambient Sound  level 12  focus on voice</text>
 <text x="22" y="503.5" xml:space="preserve" fill="#c9d1d9">  dsee      off</text>
 </svg>

@@ -149,6 +149,21 @@ do {
           [31, 500, 1000, 16000].map(SonyCommand.frequencyLabel) == ["31", "500", "1k", "16k"])
 }
 
+print("\nbattery")
+
+do {
+    check("charging wins over the level", BatteryLevel.of(percent: 5, charging: true) == .charging)
+    check("20% and below is critical", BatteryLevel.of(percent: 20, charging: false) == .critical)
+    check("21% is no longer critical", BatteryLevel.of(percent: 21, charging: false) == .low)
+    check("35% is still low", BatteryLevel.of(percent: 35, charging: false) == .low)
+    check("36% is normal", BatteryLevel.of(percent: 36, charging: false) == .normal)
+    check("full is normal", BatteryLevel.of(percent: 100, charging: false) == .normal)
+
+    check("charging shows the bolt", BatteryLevel.symbol(percent: 50, charging: true) == "battery.100.bolt")
+    check("an empty battery shows the empty glyph", BatteryLevel.symbol(percent: 5, charging: false) == "battery.0")
+    check("a full battery shows the full glyph", BatteryLevel.symbol(percent: 95, charging: false) == "battery.100")
+}
+
 print("\nopcode policy")
 
 do {

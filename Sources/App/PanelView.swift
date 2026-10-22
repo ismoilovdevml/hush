@@ -333,11 +333,13 @@ struct PanelView: View {
             }
             Spacer()
             if hp.connected, let battery = hp.battery {
+                let level = BatteryLevel.of(percent: battery, charging: hp.charging)
                 HStack(spacing: 4) {
-                    Image(systemName: hp.charging ? "battery.100.bolt" : batterySymbol(battery))
+                    Image(systemName: BatteryLevel.symbol(percent: battery, charging: hp.charging))
                         .font(.system(size: 11))
                     Text("\(battery)%").font(.system(size: 11, weight: .medium))
                 }
+                .foregroundStyle(colour(for: level))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Capsule().fill(scheme.tileFill))
             }
@@ -570,13 +572,12 @@ struct PanelView: View {
         }
     }
 
-    private func batterySymbol(_ percent: Int) -> String {
-        switch percent {
-        case 0..<13: return "battery.0"
-        case 13..<38: return "battery.25"
-        case 38..<63: return "battery.50"
-        case 63..<88: return "battery.75"
-        default: return "battery.100"
+    private func colour(for level: BatteryLevel) -> Color {
+        switch level {
+        case .charging: return .green
+        case .critical: return .red
+        case .low: return .orange
+        case .normal: return .primary
         }
     }
 }

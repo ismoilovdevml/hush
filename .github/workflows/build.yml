@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     name: Build and check the app bundle
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,12 @@ jobs:
           sw_vers
           swift --version
           clang --version | head -1
+          # The panel uses NSGlassEffectView, which needs the macOS 26 SDK to compile at all -
+          # #available only guards the runtime. Fail loudly here rather than in a wall of
+          # "cannot find NSGlassEffectView in scope".
+          sdk=$(xcrun --show-sdk-version)
+          echo "macOS SDK: $sdk"
+          [ "${sdk%%.*}" -ge 26 ] || { echo "FAIL: need the macOS 26 SDK or newer"; exit 1; }
 
       - name: Test
         run: ./test.sh
