@@ -10,6 +10,15 @@
 // anything opaque on top — a filled tile, album artwork — tore black bars through the pill.
 import SwiftUI
 
+/// A named wrapper rather than AnyView. AnyView erases the view's identity, so SwiftUI
+/// treats every update as a different view and resets the @State inside it — any animation
+/// in a glass pill ran once and then froze.
+struct SchemeWrapped<Content: View>: View {
+    let scheme: ColorScheme
+    let content: Content
+    var body: some View { content.environment(\.colorScheme, scheme) }
+}
+
 struct GlassBox<Content: View>: NSViewRepresentable {
     var cornerRadius: CGFloat = 13
     var tint: NSColor?
@@ -23,11 +32,11 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     @Environment(\.colorScheme) private var scheme
 
     final class Coordinator {
-        var host: NSHostingView<AnyView>?
+        var host: NSHostingView<SchemeWrapped<Content>>?
         /// A detached copy used only to measure. Resizing the live hosting view from inside
         /// sizeThatFits runs inside SwiftUI's own layout pass and aborts the process with an
         /// AttributeGraph precondition failure.
-        var ruler: NSHostingView<AnyView>?
+        var ruler: NSHostingView<SchemeWrapped<Content>>?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -36,8 +45,8 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     /// environment — nothing is inherited from the view that placed this box. The appearance
     /// has to be handed over explicitly, or nested fills resolve against the wrong scheme and
     /// come out darker than the pill they sit on.
-    private func wrapped() -> AnyView {
-        AnyView(content().environment(\.colorScheme, scheme))
+    private func wrapped() -> SchemeWrapped<Content> {
+        SchemeWrapped(scheme: scheme, content: content())
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -70,7 +79,7 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
-        let ruler: NSHostingView<AnyView>
+        let ruler: NSHostingView<SchemeWrapped<Content>>
         if let existing = context.coordinator.ruler {
             ruler = existing
             ruler.rootView = wrapped()
@@ -87,7 +96,12 @@ struct GlassBox<Content: View>: NSViewRepresentable {
     @available(macOS 26.0, *)
     private func apply(to view: NSGlassEffectView) {
         view.cornerRadius = cornerRadius
-        view.tintColor = tint
+        // Clear glass keeps no body of its own. Over a white page the pill all but vanished
+        // and white labels were left floating on the page behind. A faint tint gives the
+        // glass something to stand on without turning it back into a solid block.
+        view.tintColor = tint ?? (scheme == .dark
+                                  ? NSColor.black.withAlphaComponent(0.28)
+                                  : NSColor.white.withAlphaComponent(0.30))
         view.style = scheme == .dark ? .clear : .regular
     }
 }

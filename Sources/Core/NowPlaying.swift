@@ -32,11 +32,79 @@ final class NowPlaying: ObservableObject {
         return min(max(elapsed + drift, 0), duration)
     }
 
+    /// Bring the player forward. In a browser that means the tab playing the track, not
+    /// whatever tab happens to be in front — matched on the title, since neither Chrome nor
+    /// Safari will say which tab is making the sound.
     func openPlayer() {
-        guard let bundleIdentifier,
-              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
-        else { return }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        guard let bundleIdentifier else { return }
+
+        let browsers = [
+            "com.google.Chrome": "Google Chrome",
+            "com.brave.Browser": "Brave Browser",
+            "com.microsoft.edgemac": "Microsoft Edge",
+            "com.vivaldi.Vivaldi": "Vivaldi",
+        ]
+        if let app = browsers[bundleIdentifier], !title.isEmpty {
+            focusChromiumTab(app: app)
+        } else if bundleIdentifier == "com.apple.Safari", !title.isEmpty {
+            focusSafariTab()
+        }
+
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    /// A tab title carries more than the track ("… - YouTube"), so match on a prefix of ours.
+    private var titleNeedle: String {
+        String(title.prefix(40))
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private func focusChromiumTab(app: String) {
+        run(script: """
+        tell application "\(app)"
+            repeat with w in windows
+                set i to 0
+                repeat with t in tabs of w
+                    set i to i + 1
+                    if title of t contains "\(titleNeedle)" then
+                        set active tab index of w to i
+                        set index of w to 1
+                        return
+                    end if
+                end repeat
+            end repeat
+        end tell
+        """)
+    }
+
+    private func focusSafariTab() {
+        run(script: """
+        tell application "Safari"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if name of t contains "\(titleNeedle)" then
+                        set current tab of w to t
+                        set index of w to 1
+                        return
+                    end if
+                end repeat
+            end repeat
+        end tell
+        """)
+    }
+
+    /// Fails quietly: this needs Automation permission, and the panel should not break
+    /// because the user declined it. The app still comes forward either way.
+    private func run(script: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
     }
     /// False when the adapter could not start — Apple may yet close this path.
     @Published var available = true

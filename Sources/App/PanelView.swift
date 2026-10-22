@@ -117,6 +117,36 @@ private struct TransportButton: View {
     }
 }
 
+/// The little bars that say something is playing.
+///
+/// They are an indicator, not a level meter: the adapter reports no audio levels, so the
+/// heights are invented. They move while playing and rest when paused.
+private struct PlayingBars: View {
+    let playing: Bool
+    @State private var tall = false
+
+    private let bars: [(low: CGFloat, high: CGFloat, beat: Double)] = [
+        (3, 10, 0.42), (6, 13, 0.33), (4, 9, 0.52), (7, 12, 0.38),
+    ]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(Array(bars.enumerated()), id: \.offset) { index, bar in
+                Capsule()
+                    .fill(.secondary)
+                    .frame(width: 2, height: playing ? (tall ? bar.high : bar.low) : 3)
+                    .animation(playing
+                               ? .easeInOut(duration: bar.beat).repeatForever(autoreverses: true)
+                               : .easeOut(duration: 0.2),
+                               value: tall)
+                    .animation(.easeOut(duration: 0.2), value: playing)
+            }
+        }
+        .frame(height: 13, alignment: .bottom)
+        .onAppear { tall = true }
+    }
+}
+
 /// Scrolls its text when it does not fit, and sits still when it does.
 private struct Marquee: View {
     let text: String
@@ -470,7 +500,8 @@ struct PanelView: View {
                                 .lineLimit(1)
                         }
                     }
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 6)
+                    PlayingBars(playing: np.playing)
                 }
                 .contentShape(Rectangle())
             }
@@ -484,13 +515,13 @@ struct PanelView: View {
                         GeometryReader { geo in
                             let fraction = min(max(position / np.duration, 0), 1)
                             ZStack(alignment: .leading) {
-                                Capsule().fill(scheme.hairline).frame(height: 3)
+                                Capsule().fill(scheme.hairline).frame(height: 5)
                                 Capsule().fill(Color.accentColor)
-                                    .frame(width: geo.size.width * fraction, height: 3)
+                                    .frame(width: max(geo.size.width * fraction, 5), height: 5)
                             }
                             .frame(height: geo.size.height, alignment: .center)
                         }
-                        .frame(height: 3)
+                        .frame(height: 5)
 
                         HStack {
                             Text(clock(position))
