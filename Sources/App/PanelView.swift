@@ -31,29 +31,46 @@ private struct ANCTile: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 5) {
-                Image(systemName: mode.symbol)
-                    .font(.system(size: 17, weight: .regular))
-                    .symbolRenderingMode(.hierarchical)
-                    .frame(height: 19)
-                Text(mode.short)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(height: 24)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .glass(cornerRadius: 11,
-                   tint: selected ? NSColor.controlAccentColor : nil,
-                   fallback: selected ? Color.accentColor : scheme.tileFill)
+            label
         }
         .buttonStyle(.plain)
     }
+
+    @ViewBuilder
+    private var label: some View {
+        let content = VStack(spacing: 5) {
+            Image(systemName: mode.symbol)
+                .font(.system(size: 17, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .frame(height: 19)
+            Text(mode.short)
+                .font(.system(size: 10.5, weight: .medium))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(height: 28)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+
+        // The active mode is a solid accent fill, as Control Center does for an active
+        // toggle: tinted glass is too faint to read as "selected", and in light appearance
+        // it came out darker than its neighbours and looked disabled instead.
+        //
+        // Solid and glass must not be stacked. An opaque layer over a glass view leaves it
+        // nothing to sample and it renders black around the edges.
+        if selected {
+            content
+                .foregroundStyle(.white)
+                .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.accentColor))
+        } else {
+            content
+                .foregroundStyle(.primary)
+                .glass(cornerRadius: 11, fallback: scheme.tileFill)
+        }
+    }
 }
 
-/// One shape for every switch row, so Focus on Voice and DSEE cannot drift apart.
 private struct SettingRow: View {
     let title: String
     var subtitle: String?

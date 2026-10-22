@@ -10,9 +10,13 @@ struct GlassBackground: NSViewRepresentable {
     var cornerRadius: CGFloat = 13
     var tint: NSColor?
     /// Control Center's own pills are `.clear`: the desktop reads straight through them and
-    /// only a rim light and a faint tint remain. `.regular` is far more opaque and reads as a
-    /// solid block next to the real thing.
-    var clear = true
+    /// only a rim light and a faint tint remain.
+    ///
+    /// In light appearance that is not safe. The pill shows whatever is behind the *window*,
+    /// so a light panel over a dark window ends up with dark text on dark glass - measured,
+    /// the status line was almost unreadable. There the denser `.regular` keeps the surface
+    /// light enough for dark text, so the style follows the appearance.
+    @Environment(\.colorScheme) private var scheme
 
     func makeNSView(context: Context) -> NSView {
         guard #available(macOS 26.0, *) else { return NSView() }
@@ -33,17 +37,16 @@ struct GlassBackground: NSViewRepresentable {
     private func apply(to view: NSGlassEffectView) {
         view.cornerRadius = cornerRadius
         view.tintColor = tint
-        view.style = clear ? .clear : .regular
+        view.style = scheme == .dark ? .clear : .regular
     }
 }
 
 extension View {
     /// Glass where the system can draw it, the old translucent fill where it cannot.
     @ViewBuilder
-    func glass(cornerRadius: CGFloat = 13, tint: NSColor? = nil, clear: Bool = true,
-               fallback: Color) -> some View {
+    func glass(cornerRadius: CGFloat = 13, tint: NSColor? = nil, fallback: Color) -> some View {
         if #available(macOS 26.0, *) {
-            background(GlassBackground(cornerRadius: cornerRadius, tint: tint, clear: clear))
+            background(GlassBackground(cornerRadius: cornerRadius, tint: tint))
         } else {
             background(fallback, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
