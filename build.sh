@@ -10,6 +10,19 @@ FRAMEWORK="build/MediaRemoteAdapter.framework"
 ARCHS=(arm64 x86_64)
 MIN_MACOS=13.0
 
+# SwiftUI's @State/@Binding/@Environment are compiler-plugin macros shipped as
+# libSwiftUIMacros.dylib inside the *platform*, not the toolchain. xcodebuild adds this
+# search path automatically; a raw `swiftc` invocation does not on some Xcode releases
+# (e.g. 27.0.1), so @State fails with "plugin for module 'SwiftUIMacros' not found".
+# Pass both the platform and toolchain plugin dirs explicitly so the build never depends
+# on the compiler's default plugin search.
+PLUGIN_DIRS=(
+    "$(xcrun --show-sdk-platform-path)/Developer/usr/lib/swift/host/plugins"
+    "$(dirname "$(xcrun --find swiftc)")/../lib/swift/host/plugins"
+)
+PLUGIN_FLAGS=()
+for d in "${PLUGIN_DIRS[@]}"; do [ -d "$d" ] && PLUGIN_FLAGS+=(-plugin-path "$d"); done
+
 rm -rf build
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$FRAMEWORK/Resources" build/arch
 
@@ -44,6 +57,7 @@ swift_build() {          # swift_build <output> <source dir...>
     local slices=()
     for arch in "${ARCHS[@]}"; do
         swiftc -O -target "${arch}-apple-macos${MIN_MACOS}" \
+            "${PLUGIN_FLAGS[@]}" \
             -framework AppKit -framework SwiftUI -framework IOBluetooth -framework CoreAudio \
             "$@" -o "build/arch/$(basename "$out").$arch"
         slices+=("build/arch/$(basename "$out").$arch")
