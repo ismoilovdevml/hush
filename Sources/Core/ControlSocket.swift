@@ -10,9 +10,17 @@ enum ControlSocket {
     static let path: String = {
         let dir = (NSHomeDirectory() as NSString)
             .appendingPathComponent("Library/Application Support/Hush")
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // 0700 on the directory means that even in the window between bind() and the socket's
+        // own chmod, no other local user can reach the socket.
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        chmod(dir, 0o700)
         return (dir as NSString).appendingPathComponent("control.sock")
     }()
+
+    /// A single request line is small JSON; cap it so a client that never sends a newline
+    /// cannot grow the buffer without bound before the read timeout.
+    private static let maxLineBytes = 64 * 1024
 
     private static func address(_ path: String) -> sockaddr_un {
         var addr = sockaddr_un()
@@ -44,6 +52,7 @@ enum ControlSocket {
             let n = read(fd, &byte, 1)
             if n == 1 {
                 if byte == 0x0A { break }
+                if buffer.count >= maxLineBytes { return nil }
                 buffer.append(byte)
                 continue
             }

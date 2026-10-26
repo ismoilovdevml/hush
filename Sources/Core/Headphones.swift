@@ -68,6 +68,9 @@ final class Headphones: ObservableObject {
     private var eqType: UInt8?
     private var eqCenter = 6
     private var eqBandCount = 10
+    /// The band travel either side of flat, as the device reported it (XM6: ±6). A manual curve
+    /// is clamped to this before it goes on the wire, so callers should validate against it too.
+    var eqBandRange: Int { eqCenter }
     @Published var busy = false
 
     private let link: SonyLink

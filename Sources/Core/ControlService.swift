@@ -56,8 +56,9 @@ final class ControlService {
                 guard bands.count == headphones.eqBands.count else {
                     return reply(fail("eq: expected \(headphones.eqBands.count) bands"))
                 }
-                guard bands.allSatisfy({ $0 >= -6 && $0 <= 6 }) else {
-                    return reply(fail("eq: every band must be between -6 and +6"))
+                let range = headphones.eqBandRange
+                guard bands.allSatisfy({ $0 >= -range && $0 <= range }) else {
+                    return reply(fail("eq: every band must be between -\(range) and +\(range)"))
                 }
                 headphones.eqBands = bands
                 headphones.pushEQBands { [weak self] in
@@ -105,8 +106,13 @@ final class ControlService {
             let bytes = hex.split(whereSeparator: { $0 == " " || $0 == "," })
                 .compactMap { UInt8($0, radix: 16) }
             guard let opcode = bytes.first else { return reply(fail("raw: payload is empty")) }
-            let dataType = UInt8((request["dataType"] as? Int) ?? 0x0C)
-            let expect = UInt8((request["expect"] as? Int) ?? Int(opcode | 0x01))
+            // UInt8(Int) traps on an out-of-range value, and this Int comes straight off the
+            // socket, so validate rather than convert. The expect default is opcode | 0x01,
+            // always in range.
+            guard let dataType = UInt8(exactly: (request["dataType"] as? Int) ?? 0x0C),
+                  let expect = UInt8(exactly: (request["expect"] as? Int) ?? Int(opcode | 0x01)) else {
+                return reply(fail("raw: dataType and expect must be between 0 and 255"))
+            }
             headphones.sendRaw(dataType: dataType, payload: bytes, expect: expect) { payload in
                 guard let payload else {
                     return reply(["ok": false, "error": "no reply (opcode refused, or the headphones stayed quiet)"])
