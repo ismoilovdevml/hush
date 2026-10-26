@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-only tray app: WinForms host + WebView2 flyout. Builds/runs on Windows only;
+         compile-checks on macOS with -p:EnableWindowsTargeting=true. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Hush</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2592.51" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Hush.Bluetooth/Hush.Bluetooth.csproj" />
+    <ProjectReference Include="../Hush.Protocol/Hush.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="flyout.html"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+    <None Update="flyout.js"><CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory></None>
+  </ItemGroup>
+
+</Project>

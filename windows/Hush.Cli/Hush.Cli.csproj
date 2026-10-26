@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-only console harness to exercise the RFCOMM transport against a real headset. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>hush</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Hush.Bluetooth/Hush.Bluetooth.csproj" />
+    <ProjectReference Include="../Hush.Protocol/Hush.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

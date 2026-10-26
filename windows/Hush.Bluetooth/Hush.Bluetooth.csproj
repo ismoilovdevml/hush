@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows-only: uses WinRT Bluetooth RFCOMM. Builds and runs on Windows 10 2004+ only,
+         NOT on macOS. The portable protocol core (Hush.Protocol) stays OS-agnostic. -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Hush.Protocol/Hush.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>
