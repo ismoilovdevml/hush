@@ -9,13 +9,37 @@ enum Sony {
     static let escapeBit: UInt8 = 0x10
     static let ack: UInt8 = 0x01, cmd1: UInt8 = 0x0C, cmd2: UInt8 = 0x0E
 
-    /// Opcodes this app is allowed to emit. Anything else is refused before it reaches the air.
-    /// Deliberately excluded, because on protocol v2 they are destructive or unverified:
-    ///   0xF8 FACTORY_RESET_SET · 0x98 SYSTEM_CONTROL_SET (reboot) · 0x24 POWER_SET
-    ///   0x2D LARGE_DATA_COMMON (firmware) · 0xC4 JSON_GET
+    /// Opcodes this app may emit unconditionally. Anything not here or cleared by `permits`
+    /// is refused before it reaches the air.
     static let allowed: Set<UInt8> = [0x00, 0x04, 0x12, 0x22, 0x50, 0x56, 0x58, 0x5A,
-                                      0x66, 0x68, 0xA6, 0xE6, 0xE8, 0xF6]
-    static let forbidden: Set<UInt8> = [0xF8, 0x98, 0x24, 0x2D, 0xC4]
+                                      0x66, 0x68, 0xA6, 0xE6, 0xE8, 0xF2, 0xF6, 0xFA]
+    /// Never emitted — on protocol v2 these are destructive or unverified:
+    ///   0x98 SYSTEM_CONTROL_SET (reboot) · 0x24 POWER_SET (power off)
+    ///   0x2D LARGE_DATA_COMMON (firmware) · 0xC4 JSON_GET
+    static let forbidden: Set<UInt8> = [0x98, 0x24, 0x2D, 0xC4]
+
+    /// SYSTEM_SET_PARAM (0xF8) is NOT blanket-allowed: the one opcode carries both speak-to-chat
+    /// (SMART_TALKING_MODE_TYPE1 0x02 / TYPE2 0x0C) and RESET_SETTINGS 0x09 (factory reset), told
+    /// apart only by the inquired-type byte that follows it. `permits` lets 0xF8 out ONLY for the
+    /// speak-to-chat types, so a factory reset can never be emitted however the rest of the app
+    /// changes.
+    static let systemSetParam: UInt8 = 0xF8     // SYSTEM_SET_PARAM
+    static let systemSetExtParam: UInt8 = 0xFC  // SYSTEM_SET_EXT_PARAM (speak-to-chat config)
+    static let smartTalkingTypes: Set<UInt8> = [0x02, 0x0C]
+
+    /// Whether the app may send this payload: the plain allow list plus the type-aware exception
+    /// for the two SYSTEM write opcodes. SYSTEM_SET_PARAM (0xF8) and SYSTEM_SET_EXT_PARAM (0xFC)
+    /// both carry a RESET-capable command space, so each is let out ONLY for a speak-to-chat
+    /// inquired type; a bare or wrong-typed 0xF8/0xFC, and the whole forbidden set, are refused.
+    static func permits(_ payload: [UInt8]) -> Bool {
+        guard let op = payload.first else { return false }
+        if forbidden.contains(op) { return false }
+        if op == systemSetParam || op == systemSetExtParam {
+            guard payload.count >= 2, smartTalkingTypes.contains(payload[1]) else { return false }
+            return true
+        }
+        return allowed.contains(op)
+    }
 }
 
 struct SonyFrame {
@@ -83,8 +107,8 @@ final class SonyLink: NSObject, IOBluetoothRFCOMMChannelDelegate {
     func request(_ dataType: UInt8, _ payload: [UInt8], expect: UInt8,
                  timeout: TimeInterval = 2.5, done: @escaping (SonyFrame?) -> Void) {
         guard let op = payload.first else { done(nil); return }
-        guard !Sony.forbidden.contains(op), Sony.allowed.contains(op) else {
-            NSLog("Hush: REFUSED opcode 0x%02x — not on the whitelist", op)
+        guard Sony.permits(payload) else {
+            NSLog("Hush: REFUSED opcode 0x%02x — not permitted by the opcode policy", op)
             done(nil); return
         }
         queue.append(Job(dataType: dataType, payload: payload, expect: expect, timeout: timeout, done: done))

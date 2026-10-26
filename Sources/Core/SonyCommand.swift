@@ -94,4 +94,65 @@ enum SonyCommand {
     static func frequencyLabel(_ hz: Int) -> String {
         hz >= 1000 ? "\(hz / 1000)k" : "\(hz)"
     }
+
+    // MARK: speak-to-chat (Smart Talking Mode)
+    //
+    // Smart Talking Mode is TWO commands: the basic SYSTEM param (get 0xF6 / set 0xF8) carries
+    // enable/disable, the extended SYSTEM param (get 0xFA / set 0xFC) carries sensitivity +
+    // mode-out-time. The inquired type is 0x02 (TYPE1) or 0x0C (TYPE2, newer); the device's
+    // capability says which. On/off is INVERTED on the wire — enabling writes 0x00. These
+    // builders are protocol-complete and unit-tested, but NOT yet verified against a live
+    // headset, so they are not wired into the UI send path yet.
+    static let smartTalkingTypeV1: UInt8 = 0x02
+    static let smartTalkingTypeV2: UInt8 = 0x0C
+
+    enum DetectSensitivity: UInt8 { case auto = 0, high = 1, low = 2 }
+    enum ModeOutTime: UInt8 { case fast = 0, mid = 1, slow = 2, keepUntilStopped = 3 }
+
+    static func smartTalkingGet(type: UInt8) -> [UInt8] { [0xF6, type] }
+    static func smartTalkingConfigGet(type: UInt8) -> [UInt8] { [0xFA, type] }
+
+    /// Enable/disable. 0x00 = enabled on the wire (the on/off value is inverted). byte[3] is the
+    /// "preview" flag, sent equal to the main value.
+    static func smartTalkingSet(type: UInt8, enabled: Bool) -> [UInt8] {
+        let v: UInt8 = enabled ? 0x00 : 0x01
+        return [0xF8, type, v, v]
+    }
+
+    /// Sensitivity + mode-out-time. TYPE1 (0x02) carries an extra voice-focus byte (also inverted);
+    /// TYPE2 (0x0C) does not.
+    static func smartTalkingConfigSet(type: UInt8, sensitivity: DetectSensitivity,
+                                      modeOutTime: ModeOutTime, voiceFocus: Bool = false) -> [UInt8] {
+        if type == smartTalkingTypeV2 {
+            return [0xFC, type, sensitivity.rawValue, modeOutTime.rawValue]
+        }
+        return [0xFC, type, sensitivity.rawValue, voiceFocus ? 0x00 : 0x01, modeOutTime.rawValue]
+    }
+
+    /// Parses a 0xF7 basic reply: [0xF7, type, value, preview]; value 0x00 = enabled (inverted).
+    static func parseSmartTalking(_ payload: [UInt8]) -> (enabled: Bool, type: UInt8)? {
+        guard payload.count >= 3, payload[0] == 0xF7 else { return nil }
+        return (payload[2] == 0x00, payload[1])
+    }
+
+    // MARK: noise-adaptive ANC (inquiry type 0x19)
+    //
+    // The XM6 answers ANC on inquiry type 0x19 ("Noise Adaptive"), whose SET/RET/NTFY frame is
+    // 9 bytes: the 7-byte core shared with type 0x17, plus noise-adaptive on/off and sensitivity.
+    // `ambientSet` above sends only the 7-byte core for 0x19, which the XM6 tolerates but which
+    // leaves the adaptive state uncontrolled; this is the protocol-correct 9-byte form. Not yet
+    // verified live.
+    enum NoiseAdaptiveSensitivity: UInt8 { case standard = 0, high = 1, low = 2 }
+
+    static func ambientSetAdaptive(mode: AmbientMode, focusOnVoice: Bool, level: Int,
+                                   adaptiveOn: Bool,
+                                   sensitivity: NoiseAdaptiveSensitivity) -> [UInt8] {
+        [0x68, 0x19, 0x01,
+         mode == .off ? 0 : 1,
+         mode == .ambient ? 1 : 0,
+         focusOnVoice ? 1 : 0,
+         UInt8(min(max(level, 0), 20)),
+         adaptiveOn ? 1 : 0,
+         sensitivity.rawValue]
+    }
 }

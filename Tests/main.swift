@@ -167,13 +167,64 @@ do {
 print("\nopcode policy")
 
 do {
-    for opcode in [0xF8, 0x98, 0x24, 0x2D, 0xC4] as [UInt8] {
+    for opcode in [0x98, 0x24, 0x2D, 0xC4] as [UInt8] {
         check(String(format: "0x%02X is denied", opcode),
               Sony.forbidden.contains(opcode) && !Sony.allowed.contains(opcode))
+        check(String(format: "0x%02X is refused by permits", opcode), !Sony.permits([opcode]))
     }
     check("the lists do not overlap", Sony.allowed.isDisjoint(with: Sony.forbidden))
     check("ambient and equalizer writes are allowed",
           Sony.allowed.contains(0x68) && Sony.allowed.contains(0x58))
+
+    // SYSTEM_SET_PARAM (0xF8) is type-aware: speak-to-chat only, never factory reset (0x09).
+    check("0xF8 is not blanket-allowed", !Sony.allowed.contains(0xF8))
+    check("a bare 0xF8 is refused", !Sony.permits([0xF8]))
+    check("0xF8 + RESET_SETTINGS (0x09) is refused", !Sony.permits([0xF8, 0x09]))
+    check("0xF8 + an unrelated system type is refused", !Sony.permits([0xF8, 0x03]))
+    check("0xF8 + SMART_TALKING_MODE_TYPE1 (0x02) is permitted", Sony.permits([0xF8, 0x02]))
+    check("0xF8 + SMART_TALKING_MODE_TYPE2 (0x0C) is permitted", Sony.permits([0xF8, 0x0C]))
+    check("the factory-reset type is not a speak-to-chat type", !Sony.smartTalkingTypes.contains(0x09))
+    check("ambient and equalizer writes still clear permits",
+          Sony.permits([0x68, 0x19]) && Sony.permits([0x58, 0x00, 0xA0, 0x0A]))
+}
+
+print("\nspeak-to-chat + noise-adaptive ANC")
+
+do {
+    check("STC get is [0xF6, type]", SonyCommand.smartTalkingGet(type: 0x02) == [0xF6, 0x02])
+    check("STC config get is [0xFA, type]", SonyCommand.smartTalkingConfigGet(type: 0x0C) == [0xFA, 0x0C])
+    // On/off is inverted on the wire: enabling writes 0x00.
+    check("STC enable writes 0x00 (inverted)",
+          SonyCommand.smartTalkingSet(type: 0x02, enabled: true) == [0xF8, 0x02, 0x00, 0x00])
+    check("STC disable writes 0x01",
+          SonyCommand.smartTalkingSet(type: 0x02, enabled: false) == [0xF8, 0x02, 0x01, 0x01])
+    check("STC config TYPE1 has the voice-focus byte",
+          SonyCommand.smartTalkingConfigSet(type: 0x02, sensitivity: .high,
+                                             modeOutTime: .slow, voiceFocus: true) == [0xFC, 0x02, 0x01, 0x00, 0x02])
+    check("STC config TYPE2 drops the voice-focus byte",
+          SonyCommand.smartTalkingConfigSet(type: 0x0C, sensitivity: .low,
+                                             modeOutTime: .keepUntilStopped) == [0xFC, 0x0C, 0x02, 0x03])
+    check("STC reply parses inverted enabled",
+          SonyCommand.parseSmartTalking([0xF7, 0x02, 0x00, 0x00])?.enabled == true)
+    check("STC reply parses disabled",
+          SonyCommand.parseSmartTalking([0xF7, 0x02, 0x01, 0x01])?.enabled == false)
+
+    // The 0x19 noise-adaptive ANC frame is 9 bytes: 7-byte core + adaptive on/off + sensitivity.
+    check("adaptive ANC SET is the 9-byte 0x19 frame",
+          SonyCommand.ambientSetAdaptive(mode: .noiseCancelling, focusOnVoice: false, level: 10,
+                                         adaptiveOn: true, sensitivity: .standard)
+          == [0x68, 0x19, 0x01, 1, 0, 0, 10, 1, 0])
+    check("adaptive ANC ambient+voice+sensitivity encodes",
+          SonyCommand.ambientSetAdaptive(mode: .ambient, focusOnVoice: true, level: 20,
+                                         adaptiveOn: false, sensitivity: .low)
+          == [0x68, 0x19, 0x01, 1, 1, 1, 20, 0, 2])
+
+    // Guard: the extended-config opcode is type-gated just like 0xF8, and reset stays unreachable.
+    check("0xF8 + speak-to-chat type is permitted", Sony.permits([0xF8, 0x02]) && Sony.permits([0xF8, 0x0C]))
+    check("0xFC + speak-to-chat type is permitted", Sony.permits([0xFC, 0x02]) && Sony.permits([0xFC, 0x0C]))
+    check("0xFC + RESET_SETTINGS (0x09) is refused", !Sony.permits([0xFC, 0x09]))
+    check("a bare 0xFC is refused", !Sony.permits([0xFC]))
+    check("0xFC is not blanket-allowed", !Sony.allowed.contains(0xFC))
 }
 
 print("\n\(checks - failures)/\(checks) checks passed")
