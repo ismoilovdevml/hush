@@ -34,17 +34,20 @@ info "macOS $macos_version on $arch_label — supported"
 
 # ---- find the release ---------------------------------------------------------------------
 
-api="https://api.github.com/repos/$REPO/releases/latest"
-release="$(curl -fsSL "$api")" || die "could not reach GitHub."
+# Resolve assets through github.com's /releases/latest/download/ redirect, NOT the REST API.
+# api.github.com is rate-limited to 60 requests/hour per IP when unauthenticated and returns
+# HTTP 403 once that is hit, which broke installs from shared / VPN / CGNAT addresses
+# ("could not reach GitHub"). The download redirect is served off the releases CDN with no
+# such limit.
+base="https://github.com/$REPO/releases/latest/download"
+url="$base/$ASSET"
+sums_url="$base/checksum.txt"
 
-tag="$(printf '%s' "$release" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
-url="$(printf '%s' "$release" \
-    | tr ',' '\n' | sed -n 's/.*"browser_download_url": *"\([^"]*'"$ASSET"'\)".*/\1/p' | head -1)"
-sums_url="$(printf '%s' "$release" \
-    | tr ',' '\n' | sed -n 's/.*"browser_download_url": *"\([^"]*checksum.txt\)".*/\1/p' | head -1)"
-
-[ -n "$url" ] || die "the latest release has no $ASSET. See https://github.com/$REPO/releases"
-info "release $tag"
+# Best-effort tag name for the message, parsed from the /releases/latest redirect. Never fatal:
+# a failure here must not stop an install that the download URLs can still satisfy.
+tag="$(curl -fsSI "https://github.com/$REPO/releases/latest" 2>/dev/null \
+    | tr -d '\r' | awk 'tolower($1)=="location:"{n=split($2,p,"/"); print p[n]}' | head -1)"
+[ -n "$tag" ] && info "release $tag" || info "latest release"
 
 # ---- download and verify ------------------------------------------------------------------
 
